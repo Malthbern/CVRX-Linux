@@ -69,7 +69,7 @@ exports.Load = async () => {
         FriendNotificationsList: {},
         ShowInviteNotifications: true,
         ShowInviteRequestNotifications: true,
-        UseCustomNotifications: true,
+        UseCustomNotifications: false,
         CustomNotificationTimeout: 5000,
         CustomNotificationMaxCount: 5,
         CustomNotificationCorner: 'bottom-right',
