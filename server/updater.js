@@ -54,7 +54,14 @@ exports.Setup = async (mainWindow) => {
     }
 
     // Set up recurring update checks every 15 minutes
-    setInterval(exports.CheckLatestRelease, checkUpdatesIntervalMinutes * 60 * 1000, mainWindow);
+    setInterval(async () => {
+        try {
+            await exports.CheckLatestRelease(mainWindow);
+        } catch (error) {
+            // It's ok to only log here since a new call will be made in 15 minutes
+            log.error('[CRON CheckLatestRelease] Failed to check for new releases:', error.toString());
+        }
+    }, checkUpdatesIntervalMinutes * 60 * 1000);
 };
 
 exports.CheckLatestRelease = async (mainWindow, bypassIgnores = false) => {
