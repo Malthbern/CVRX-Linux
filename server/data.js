@@ -2030,79 +2030,82 @@ class Core {
 
     async HasAvatarAdvancedSettings(avatarId) {
         const fs = require('fs');
-        
+
         try {
-            // First check if CVR path is configured
-            const cvrPath = Config.GetCVRPath();
-            if (!cvrPath) {
-                return { 
-                    hasSettings: false, 
+            const aasDirectory = this.#GetAdvAvatarSettingsDir();
+
+            if (!aasDirectory) {
+                return {
+                    hasSettings: false,
                     reason: 'cvr_path_not_configured',
-                    message: 'ChilloutVR path not configured'
+                    message: 'ChilloutVR path not configured',
                 };
             }
-            
-            // Check if CVR directory exists
-            const cvrDataPath = path.join(cvrPath, 'ChilloutVR_Data');
-            if (!fs.existsSync(cvrDataPath)) {
-                return { 
-                    hasSettings: false, 
-                    reason: 'cvr_directory_not_found',
-                    message: 'ChilloutVR directory not found',
-                    expectedPath: cvrDataPath
-                };
-            }
-            
-            // Check if AAS directory exists
-            const aasDirectory = path.join(cvrDataPath, 'AvatarsAdvancedSettingsProfiles');
+
             if (!fs.existsSync(aasDirectory)) {
-                return { 
-                    hasSettings: false, 
+                return {
+                    hasSettings: false,
                     reason: 'aas_directory_not_found',
                     message: 'Advanced Avatar Settings directory not found',
-                    expectedPath: aasDirectory
+                    expectedPath: aasDirectory,
                 };
             }
-            
+
             // Finally check if the specific avatar settings file exists
             const advAvatarPath = this.#GetAdvAvatarFilePath(avatarId);
             log.debug(`[HasAvatarAdvancedSettings] Checking for avatar ${avatarId} at path: ${advAvatarPath}`);
-            
+
             const exists = fs.existsSync(advAvatarPath);
             log.debug(`[HasAvatarAdvancedSettings] File exists: ${exists}`);
-            
-            return { 
-                hasSettings: exists, 
+
+            return {
+                hasSettings: exists,
                 reason: exists ? 'found' : 'file_not_found',
-                message: exists ? 'Advanced settings found' : 'No advanced settings file found'
+                message: exists ? 'Advanced settings found' : 'No advanced settings file found',
             };
         } catch (error) {
             log.error(`[HasAvatarAdvancedSettings] Failed to check advanced settings for avatar ${avatarId}:`, error);
-            return { 
-                hasSettings: false, 
+            return {
+                hasSettings: false,
                 reason: 'error',
-                message: error.message
+                message: error.message,
             };
         }
     }
 
-    #GetAdvAvatarFilePath(avatarId) {
-        const path = require('path');
-        
-        // Get the CVR path from config - using the correct method from config.js
+    // ChilloutVR stores AAS profiles in Unity's persistentDataPath: <LocalLow>/ChilloutVR/ChilloutVR/AvatarsAdvancedSettingsProfiles.
+    // On Linux, CVR runs through Proton, so the same directory lives inside the Proton prefix for Steam AppID 661130.
+    #GetAdvAvatarSettingsDir() {
+        const os = require('os');
+
+        if (process.platform === 'win32') {
+            return path.join(
+                os.homedir(),
+                'AppData', 'LocalLow', 'ChilloutVR', 'ChilloutVR', 'AvatarsAdvancedSettingsProfiles',
+            );
+        }
+
+        // Derive the Proton prefix from the CVR install path: <library>/steamapps/common/ChilloutVR -> <library>/steamapps
         const cvrPath = Config.GetCVRPath();
-        log.debug(`[GetAdvAvatarFilePath] CVR path from config: ${cvrPath}`);
-        
-        if (!cvrPath) {
+        if (!cvrPath) return null;
+        const steamappsPath = path.dirname(path.dirname(cvrPath));
+        return path.join(
+            steamappsPath, 'compatdata', '661130', 'pfx', 'drive_c', 'users', 'steamuser',
+            'AppData', 'LocalLow', 'ChilloutVR', 'ChilloutVR', 'AvatarsAdvancedSettingsProfiles',
+        );
+    }
+
+    #GetAdvAvatarFilePath(avatarId) {
+        const aasDirectory = this.#GetAdvAvatarSettingsDir();
+        log.debug(`[GetAdvAvatarFilePath] AAS directory: ${aasDirectory}`);
+
+        if (!aasDirectory) {
             throw new Error('ChilloutVR path not configured');
         }
-        
-        // Build the path to the AvatarsAdvancedSettingsProfiles directory
-        const advAvatarDir = path.join(cvrPath, 'ChilloutVR_Data', 'AvatarsAdvancedSettingsProfiles');
-        const advAvatarPath = path.join(advAvatarDir, `${avatarId}.advavtr`);
-        
+
+        const advAvatarPath = path.join(aasDirectory, `${avatarId}.advavtr`);
         log.debug(`[GetAdvAvatarFilePath] Constructed path: ${advAvatarPath}`);
-        
+
         return advAvatarPath;
     }
 
