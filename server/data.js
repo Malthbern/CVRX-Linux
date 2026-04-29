@@ -97,8 +97,11 @@ async function LoadUserImages(userObject) {
     }
 }
 
+// Placeholder banner URL used when banners are not set — skip downloading these
+const DefaultGroupBannerUrl = '/groups/00000000-0000-0000-0000-000000000000/banners/00000000-0000-0000-0000-000000000000.png';
+
 async function LoadGroupImages(groupObject) {
-    if (groupObject?.banner) {
+    if (groupObject?.banner && !groupObject.banner.includes(DefaultGroupBannerUrl)) {
         await LoadImage(groupObject.banner, groupObject);
     }
     if (groupObject?.image) {
@@ -350,6 +353,17 @@ class Core {
 
         // CVR Executable Selection
         ipcMain.handle('select-cvr-executable', async (_event) => await Config.SelectCVRExecutable());
+
+        // Image file picker
+        ipcMain.handle('select-image-file', async (_event) => {
+            const { canceled, filePaths } = await dialog.showOpenDialog({
+                title: 'Select Image',
+                filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+                properties: ['openFile'],
+            });
+            if (canceled || !filePaths.length) return null;
+            return filePaths[0];
+        });
 
         // Account
         ipcMain.handle('get-mature-content-config', (_event) => EscapeHtml(this.matureContentConfig));

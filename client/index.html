@@ -42,6 +42,9 @@
         <div data-tooltip="My Props" data-page="props" class="navbar-button material-symbols-outlined">
           view_in_ar
         </div>
+        <div data-tooltip="My Groups" data-page="groups" class="navbar-button material-symbols-outlined">
+          workspaces
+        </div>
       </div>
       <div class="navbar-seg">
         <div data-tooltip="Settings" data-page="settings" class="navbar-button material-symbols-outlined">
@@ -118,7 +121,7 @@
           </button>
         </div>
         <div class="search-output">
-          <div class="search-status">Enter at least 3 characters to search<br><small>Or use prefixes for direct GUID access:<br>a+ for avatars, p+ for props,<br>i+ for instances, u+ for users</small></div>
+          <div class="search-status">Enter at least 3 characters to search<br><small>Or use prefixes for direct GUID access:<br>a+ for avatars, p+ for props,<br>i+ for instances, u+ for users, g+ for groups</small></div>
           <div class="search-loading hidden">
             <span class="material-symbols-outlined spinner">refresh</span>
             <span>Searching...</span>
@@ -155,6 +158,14 @@
               <span class="toggle-indicator material-symbols-outlined">expand_more</span>
             </h3>
             <div class="search-output--props"></div>
+          </div>
+
+          <div class="search-output-category groups-category">
+            <h3>
+              <div class="category-title"><span class="material-symbols-outlined">workspaces</span>My Groups</div>
+              <span class="toggle-indicator material-symbols-outlined">expand_more</span>
+            </h3>
+            <div class="search-output--groups"></div>
           </div>
         </div>
       </div>
@@ -221,6 +232,27 @@
           <span>Loading props...</span>
         </div>
         <div class="props-wrapper"></div>
+      </div>
+      <!-- GROUPS -->
+      <div class="display-wrapper" id="display-groups">
+        <input id="groups-filter" type="text" placeholder="Type to Filter">
+        <div class="groups-filter-controls">
+          <button class="filter-button active" data-filter="all">
+            <span class="material-symbols-outlined">workspaces</span>All
+          </button>
+          <button class="filter-button" data-filter="owned">
+            <span class="material-symbols-outlined">shield</span>Owned
+          </button>
+          <button class="filter-button" data-filter="joined">
+            <span class="material-symbols-outlined">group</span>Joined
+          </button>
+        </div>
+        <button id="groups-refresh" class="material-symbols-outlined">refresh</button>
+        <div class="groups-loading hidden">
+          <span class="material-symbols-outlined spinner">refresh</span>
+          <span>Loading groups...</span>
+        </div>
+        <div class="groups-wrapper"></div>
       </div>
       <!-- DEBUG -->
       <div class="display-wrapper" id="display-debug">

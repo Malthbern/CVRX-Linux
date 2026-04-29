@@ -168,6 +168,9 @@ contextBridge.exposeInMainWorld('API', {
     // CVR Executable Selection
     selectCVRExecutable: () => ipcRenderer.invoke('select-cvr-executable'),
 
+    // Image file picker
+    selectImageFile: () => ipcRenderer.invoke('select-image-file'),
+
     // Categories
     // Returns the last retrieved categories (this does not do an API request)
     getCategories: () => ipcRenderer.invoke('get-categories'),
