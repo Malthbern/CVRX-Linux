@@ -49,6 +49,9 @@ let friendCategories = [];
 // Store friends data for category filtering
 let friendsData = {};
 
+// Export friends data for access by other modules
+export { friendsData };
+
 // Dependencies that need to be injected
 let currentActiveUser = null;
 let ShowDetailsWrapper = null;

@@ -90,6 +90,9 @@ contextBridge.exposeInMainWorld('API', {
     markInviteRequestDismissed: (inviteRequestId) => ipcRenderer.invoke('mark-invite-request-dismissed', inviteRequestId),
     isInviteDismissed: (inviteId) => ipcRenderer.invoke('is-invite-dismissed', inviteId),
     isInviteRequestDismissed: (inviteRequestId) => ipcRenderer.invoke('is-invite-request-dismissed', inviteRequestId),
+    markGroupInviteDismissed: (groupId) => ipcRenderer.invoke('mark-group-invite-dismissed', groupId),
+    isGroupInviteDismissed: (groupId) => ipcRenderer.invoke('is-group-invite-dismissed', groupId),
+    refreshGroupInvites: () => ipcRenderer.invoke('refresh-group-invites'),
 
     onFriendRequests: (callback) => ipcRenderer.on('friend-requests', callback),
 
@@ -167,6 +170,9 @@ contextBridge.exposeInMainWorld('API', {
 
     // CVR Executable Selection
     selectCVRExecutable: () => ipcRenderer.invoke('select-cvr-executable'),
+
+    // Image file picker
+    selectImageFile: () => ipcRenderer.invoke('select-image-file'),
 
     // Categories
     // Returns the last retrieved categories (this does not do an API request)

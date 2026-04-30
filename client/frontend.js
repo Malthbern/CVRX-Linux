@@ -59,6 +59,16 @@ import {
     resetUserContentCache
 } from './astrolib/user_content.js';
 import { loadCategoriesManager } from './astrolib/categories_manager.js';
+import {
+    initializeGroupsModule,
+    loadGroups,
+    initializeGroupsPage,
+    setupGroupsTextFilter,
+    setupGroupsFilterButtons,
+    setupGroupsRefreshButton,
+    showGroupDetails,
+    setCurrentUserId,
+} from './astrolib/groups.js';
 
 // ===========
 // GLOBAL VARS
@@ -77,23 +87,31 @@ let currentWorldDetailsId = null; // Track the currently open world details
 // This prevents dismissed invites from reappearing when API updates come in
 const dismissedInvites = new Map(); // Map<inviteId, timestamp>
 const dismissedInviteRequests = new Map(); // Map<inviteRequestId, timestamp>
+const dismissedGroupInvites = new Map(); // Map<groupId, timestamp>
 const DISMISS_TIMEOUT = 10 * 60 * 1000; // 10 minutes in milliseconds (longer than API timeout)
 
 // Function to clean up old dismissed entries
 function cleanupDismissedEntries() {
     const now = Date.now();
-    
+
     // Clean up dismissed invites
     for (const [inviteId, timestamp] of dismissedInvites.entries()) {
         if (now - timestamp > DISMISS_TIMEOUT) {
             dismissedInvites.delete(inviteId);
         }
     }
-    
+
     // Clean up dismissed invite requests
     for (const [inviteRequestId, timestamp] of dismissedInviteRequests.entries()) {
         if (now - timestamp > DISMISS_TIMEOUT) {
             dismissedInviteRequests.delete(inviteRequestId);
+        }
+    }
+
+    // Clean up dismissed group invites
+    for (const [groupId, timestamp] of dismissedGroupInvites.entries()) {
+        if (now - timestamp > DISMISS_TIMEOUT) {
+            dismissedGroupInvites.delete(groupId);
         }
     }
 }
@@ -106,6 +124,11 @@ function isInviteDismissed(inviteId) {
 // Function to check if an invite request is dismissed
 function isInviteRequestDismissed(inviteRequestId) {
     return dismissedInviteRequests.has(inviteRequestId);
+}
+
+// Function to check if a group invite is dismissed
+function isGroupInviteDismissed(groupId) {
+    return dismissedGroupInvites.has(groupId);
 }
 
 // Function to mark an invite as dismissed
@@ -125,6 +148,15 @@ function markInviteRequestDismissed(inviteRequestId) {
     // Also notify the server to prevent desktop notifications
     window.API.markInviteRequestDismissed(inviteRequestId).catch(error => {
         log('Failed to mark invite request as dismissed on server:', error);
+    });
+}
+
+// Function to mark a group invite as dismissed
+function markGroupInviteDismissed(groupId) {
+    dismissedGroupInvites.set(groupId, Date.now());
+    log(`Marked group invite ${groupId} as dismissed`);
+    window.API.markGroupInviteDismissed(groupId).catch(error => {
+        log('Failed to mark group invite as dismissed on server:', error);
     });
 }
 
@@ -283,6 +315,14 @@ function swapNavPages(page) {
             loadAndFilterPageContent('props', '#display-props', window.API.refreshGetActiveUserProps, '#props-filter');
             // Initialize props page
             initializePropsPage();
+            break;
+        case 'groups':
+            // Groups uses invoke (not send), so we handle loading directly
+            const groupsDisplay = document.querySelector('#display-groups');
+            if (!groupsDisplay.hasAttribute('loaded-groups')) {
+                loadGroups();
+            }
+            initializeGroupsPage();
             break;
     }
 
@@ -480,6 +520,10 @@ window.API.onHomePage((_event) => {
     setupWorldsTextFilter();
     // Setup props text filter
     setupPropsTextFilter();
+    // Setup groups text filter and buttons
+    setupGroupsTextFilter();
+    setupGroupsFilterButtons();
+    setupGroupsRefreshButton();
     // Setup friend activity filter
     setupFriendActivityFilter();
     
@@ -748,7 +792,14 @@ window.API.onGetActiveUser((_event, activeUser) => {
         ShowDetailsWrapper,
         DetailsType
     });
-    
+
+    // Initialize the groups module with dependencies
+    initializeGroupsModule({
+        ShowDetailsWrapper,
+        DetailsType
+    });
+    setCurrentUserId(activeUser.id);
+
     // Update the current active user in the friends module
     updateCurrentActiveUser(activeUser);
 
@@ -1022,6 +1073,14 @@ async function loadTabContent(tab, entityId) {
                 // Filter the global active instances by world ID
                 items = activeInstances.filter(instance => instance.world?.id === entityId) || [];
                 break;
+            case 'groups': {
+                const groupsData = await window.API.getUserGroups(entityId);
+                items = [
+                    ...(groupsData?.owned || []),
+                    ...(groupsData?.member || []),
+                ];
+                break;
+            }
             case 'stats':
                 // Stats tab is disabled, but we'll keep this case for future implementation
                 grid.innerHTML = '<div class="no-items-message">Stats feature coming soon!</div>';
@@ -1097,6 +1156,13 @@ async function loadTabContent(tab, entityId) {
                         </div>`;
                     break;
                 }
+                case 'groups':
+                    icon = 'group';
+                    additionalInfo = `
+                        <div class="card-detail">
+                            <span class="material-symbols-outlined">${icon}</span>${item.memberCount || 0} members
+                        </div>`;
+                    break;
                 case 'users': {
                     icon = 'person';
                     // Add friend indicator if applicable
@@ -1193,6 +1259,9 @@ async function loadTabContent(tab, entityId) {
                             case 'worlds':
                                 ShowDetailsWrapper(DetailsType.World, item.id);
                                 break;
+                            case 'groups':
+                                showGroupDetails(item.id);
+                                break;
                             case 'users':
                                 ShowDetailsWrapper(DetailsType.User, item.id);
                                 break;
@@ -1252,7 +1321,8 @@ searchBar.addEventListener('keypress', async (event) => {
         || searchTerm.startsWith('a+') // Avatar
         || searchTerm.startsWith('p+') // Prop
         || searchTerm.startsWith('i+') // Instance
-        || searchTerm.startsWith('u+')) // User
+        || searchTerm.startsWith('u+') // User
+        || searchTerm.startsWith('g+')) // Group
     {
         prefix = searchTerm.slice(0, 2); // Prefix
         if (prefix === 'i+') {
@@ -1265,14 +1335,6 @@ searchBar.addEventListener('keypress', async (event) => {
 
     // If the search is a valid GUID, show the details
     if (prefix !== null && guidPart !== null) {
-        const typeMap = {
-            'w+': DetailsType.World,
-            'a+': DetailsType.Avatar,
-            'p+': DetailsType.Prop,
-            'i+': DetailsType.Instance,
-            'u+': DetailsType.User
-        };
-
         try {
             // Show loading state
             document.querySelector('.search-status').classList.add('hidden');
@@ -1280,12 +1342,23 @@ searchBar.addEventListener('keypress', async (event) => {
             document.querySelector('.search-loading').classList.remove('hidden');
             hideAllSearchCategories();
 
-            // Attempt to show details for the GUID
-            await ShowDetailsWrapper(typeMap[prefix], guidPart);
-            
+            if (prefix === 'g+') {
+                // Groups use their own overlay
+                await showGroupDetails(guidPart);
+            } else {
+                const typeMap = {
+                    'w+': DetailsType.World,
+                    'a+': DetailsType.Avatar,
+                    'p+': DetailsType.Prop,
+                    'i+': DetailsType.Instance,
+                    'u+': DetailsType.User
+                };
+                await ShowDetailsWrapper(typeMap[prefix], guidPart);
+            }
+
             // Clear the search bar after successful search
             searchBar.value = '';
-            
+
             // Hide loading state
             document.querySelector('.search-loading').classList.add('hidden');
             return;
@@ -1338,11 +1411,13 @@ searchBar.addEventListener('keypress', async (event) => {
         const searchOutputWorlds = document.querySelector('.search-output--worlds');
         const searchOutputAvatars = document.querySelector('.search-output--avatars');
         const searchOutputProps = document.querySelector('.search-output--props');
+        const searchOutputGroups = document.querySelector('.search-output--groups');
 
         const userResults = [];
         const worldsResults = [];
         const avatarResults = [];
         const propsResults = [];
+        const groupResults = [];
 
         // Create the search result elements
         for (const result of results) {
@@ -1466,17 +1541,88 @@ searchBar.addEventListener('keypress', async (event) => {
             }
         }
 
+        // Search groups locally (filter user's owned+joined groups by name)
+        try {
+            const myGroups = await window.API.getMyGroups();
+            const allGroups = [
+                ...(myGroups?.owned || []).map(g => ({ ...g, _ownership: 'owned' })),
+                ...(myGroups?.member || []).map(g => ({ ...g, _ownership: 'joined' })),
+            ];
+            const searchLower = searchTerm.toLowerCase();
+            const matchedGroups = allGroups.filter(g =>
+                g.name && g.name.toLowerCase().includes(searchLower)
+            );
+
+            const groupRoleUpdateQueue = [];
+
+            for (const group of matchedGroups) {
+                const isOwned = group._ownership === 'owned';
+                const groupNode = createElement('div', {
+                    className: 'search-output--node',
+                    innerHTML: `
+                        <div class="thumbnail-container">
+                            <img src="img/ui/placeholder.png" data-hash="${group.imageHash || ''}" class="hidden"/>
+                        </div>
+                        <div class="search-result-content">
+                            <p class="search-result-name">${group.name}</p>
+                            <p class="search-result-type">group</p>
+                            <div class="search-result-detail">
+                                <span class="material-symbols-outlined">group</span>${group.memberCount || 0} members
+                            </div>
+                            <div class="search-result-detail search-role-detail">
+                                <span class="material-symbols-outlined">${isOwned ? 'shield' : 'login'}</span>${isOwned ? 'Owner' : 'Joined'}
+                            </div>
+                        </div>
+                    `,
+                });
+
+                const thumbnailContainer = groupNode.querySelector('.thumbnail-container');
+                thumbnailContainer.style.backgroundImage = 'url(\'img/ui/placeholder.png\')';
+                thumbnailContainer.style.backgroundSize = 'cover';
+                if (group.imageHash) {
+                    thumbnailContainer.dataset.hash = group.imageHash;
+                }
+
+                groupNode.onclick = () => showGroupDetails(group.id);
+                groupResults.push(groupNode);
+
+                if (!isOwned && currentActiveUser?.id) {
+                    groupRoleUpdateQueue.push({ groupId: group.id, node: groupNode });
+                }
+            }
+
+            // Resolve actual roles for joined groups in the background
+            const { findMyRole, getRoleIcon } = await import('./astrolib/groups.js');
+            for (const { groupId, node } of groupRoleUpdateQueue) {
+                try {
+                    const role = await findMyRole(groupId, currentActiveUser.id);
+                    if (role) {
+                        const roleDetail = node.querySelector('.search-role-detail');
+                        if (roleDetail) {
+                            roleDetail.innerHTML = `<span class="material-symbols-outlined">${getRoleIcon(role)}</span>${role}`;
+                        }
+                    }
+                } catch (_err) {
+                    log(`Failed to resolve role for group ${groupId}`);
+                }
+            }
+        } catch (_err) {
+            log('Failed to search groups locally');
+        }
+
         // Replace previous search results with the new ones
         searchOutputUsers.replaceChildren(...userResults);
         searchOutputWorlds.replaceChildren(...worldsResults);
         searchOutputAvatars.replaceChildren(...avatarResults);
         searchOutputProps.replaceChildren(...propsResults);
+        searchOutputGroups.replaceChildren(...groupResults);
 
         // Show/hide categories based on results and uncollapse them
         toggleCategoryVisibility('.users-category', userResults.length > 0);
         toggleCategoryVisibility('.worlds-category', worldsResults.length > 0);
         toggleCategoryVisibility('.avatars-category', avatarResults.length > 0);
         toggleCategoryVisibility('.props-category', propsResults.length > 0);
+        toggleCategoryVisibility('.groups-category', groupResults.length > 0);
 
         // Uncollapse all visible categories after search
         document.querySelectorAll('.search-output-category:not(.empty)').forEach(category => {
@@ -1488,9 +1634,10 @@ searchBar.addEventListener('keypress', async (event) => {
         updateCategoryCount('.worlds-category', worldsResults.length);
         updateCategoryCount('.avatars-category', avatarResults.length);
         updateCategoryCount('.props-category', propsResults.length);
+        updateCategoryCount('.groups-category', groupResults.length);
 
         // Show "no results" message if no results found
-        const totalResults = userResults.length + worldsResults.length + avatarResults.length + propsResults.length;
+        const totalResults = userResults.length + worldsResults.length + avatarResults.length + propsResults.length + groupResults.length;
         if (totalResults === 0) {
             document.querySelector('.search-no-results').classList.remove('hidden');
         } else {
@@ -2403,8 +2550,121 @@ window.API.onFriendRequests((_event, friendRequests) => {
         homeRequests.prepend(friendRequestNode);
         applyTooltips();
     }
-    
+
     // Update notification count
+    updateNotificationCount();
+});
+
+// Group invite listener — renders pending group invites as cards in the Invites & Requests section
+window.API.onGroupInvitesUpdated((_event, payload) => {
+    const invites = payload?.invites ?? [];
+    log('Group Invites Received!');
+    log(invites);
+
+    const homeRequests = document.querySelector('.home-requests-wrapper');
+
+    // Remove previous group invite cards before re-rendering
+    document.querySelectorAll('.notification-group-invite').forEach(el => el.remove());
+
+    const filteredInvites = invites.filter(invite => invite?.groupId && !isGroupInviteDismissed(invite.groupId));
+
+    if (filteredInvites.length < invites.length) {
+        log(`Filtered out ${invites.length - filteredInvites.length} dismissed group invites`);
+    }
+
+    for (const invite of filteredInvites) {
+        const groupImageNode = createElement('img', {
+            className: 'notification-avatar',
+            src: 'img/ui/placeholder.png',
+            onClick: () => showGroupDetails(invite.groupId),
+        });
+        groupImageNode.dataset.hash = invite.imageHash;
+
+        // Accept: per the CVR backend, RequestJoinGroup also confirms a pending invite
+        const acceptButton = createElement('button', {
+            className: 'notification-action-button notification-accept',
+            innerHTML: '<span class="material-symbols-outlined">check</span>',
+            tooltip: 'Accept Group Invite',
+            onClick: async () => {
+                acceptButton.disabled = true;
+                try {
+                    await window.API.requestJoinGroup(invite.groupId);
+                    pushToast(`Joined ${invite.groupName || 'group'}`, 'confirm');
+                    markGroupInviteDismissed(invite.groupId);
+                    groupInviteNode.remove();
+                    updateNotificationCount();
+                    // Re-fetch so the rest of the app (e.g. My Groups) reflects the change
+                    window.API.refreshGroupInvites().catch(error => log('Failed to refresh group invites:', error));
+                } catch (error) {
+                    log('Failed to accept group invite:', error);
+                    pushToast('Failed to accept group invite', 'error');
+                    acceptButton.disabled = false;
+                }
+            },
+        });
+
+        const declineButton = createElement('button', {
+            className: 'notification-action-button notification-decline',
+            innerHTML: '<span class="material-symbols-outlined">close</span>',
+            tooltip: 'Decline Group Invite',
+            onClick: async () => {
+                declineButton.disabled = true;
+                try {
+                    await window.API.declineGroupInvite(invite.groupId);
+                    pushToast('Group invite declined', 'info');
+                    markGroupInviteDismissed(invite.groupId);
+                    groupInviteNode.remove();
+                    updateNotificationCount();
+                    window.API.refreshGroupInvites().catch(error => log('Failed to refresh group invites:', error));
+                } catch (error) {
+                    log('Failed to decline group invite:', error);
+                    pushToast('Failed to decline group invite', 'error');
+                    declineButton.disabled = false;
+                }
+            },
+        });
+
+        const groupName = invite.groupName || 'a group';
+        const inviterName = invite.invitedByName || 'Someone';
+
+        const groupInviteNode = createElement('div', {
+            className: 'notification-item notification-group-invite',
+            innerHTML: `
+                <div class="notification-content">
+                    <div class="notification-main">
+                        <div class="notification-text">
+                            <span class="notification-sender">${inviterName}</span>
+                            <span class="notification-message">invited you to</span>
+                        </div>
+                        <div class="notification-target">
+                            <div class="notification-world-info">
+                                <span class="material-symbols-outlined notification-world-icon">groups</span>
+                                <span class="notification-world-name notification-group-name">${groupName}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="notification-action">
+                        <div class="notification-action-buttons"></div>
+                    </div>
+                </div>
+            `,
+        });
+
+        // Make the group name clickable to open the group details overlay
+        const groupNameElement = groupInviteNode.querySelector('.notification-group-name');
+        groupNameElement.style.cursor = 'pointer';
+        groupNameElement.addEventListener('click', () => showGroupDetails(invite.groupId));
+
+        const actionButtons = groupInviteNode.querySelector('.notification-action-buttons');
+        actionButtons.append(acceptButton, declineButton);
+
+        const notificationContent = groupInviteNode.querySelector('.notification-content');
+        notificationContent.insertBefore(groupImageNode, notificationContent.firstChild);
+
+        homeRequests.prepend(groupInviteNode);
+    }
+
+    applyTooltips();
     updateNotificationCount();
 });
 
@@ -2782,6 +3042,9 @@ document.querySelectorAll('.settings-tab').forEach(tab => {
 // Handle "Close to System Tray" setting
 const closeToTrayCheckbox = document.getElementById('setting-close-to-tray');
 
+// Handle "Minimize to Tray Notification" setting
+const minimizeToTrayNotificationCheckbox = document.getElementById('setting-minimize-to-tray-notification');
+
 // Handle "Thumbnail Shape" setting
 const thumbnailShapeDropdown = document.getElementById('setting-thumbnail-shape');
 
@@ -2872,6 +3135,12 @@ window.API.getConfig().then(config => {
     if (config && config.CloseToSystemTray !== undefined) {
         closeToTrayCheckbox.checked = config.CloseToSystemTray;
     }
+    if (config && config.ShowMinimizeToTrayNotification !== undefined) {
+        minimizeToTrayNotificationCheckbox.checked = config.ShowMinimizeToTrayNotification;
+    } else {
+        // Default to enabled to preserve previous behavior
+        minimizeToTrayNotificationCheckbox.checked = true;
+    }
     if (config && config.ThumbnailShape !== undefined) {
         thumbnailShapeDropdown.value = config.ThumbnailShape;
         applyThumbnailShape(config.ThumbnailShape);
@@ -2940,6 +3209,20 @@ closeToTrayCheckbox.addEventListener('change', () => {
             // Revert checkbox state if save failed
             window.API.getConfig().then(config => {
                 closeToTrayCheckbox.checked = config.CloseToSystemTray;
+            });
+        });
+});
+
+// Update config when "Minimize to Tray Notification" setting is changed
+minimizeToTrayNotificationCheckbox.addEventListener('change', () => {
+    window.API.updateConfig({ ShowMinimizeToTrayNotification: minimizeToTrayNotificationCheckbox.checked })
+        .then(() => {
+            pushToast('Setting saved', 'confirm');
+        })
+        .catch(err => {
+            pushToast(`Error saving setting: ${err}`, 'error');
+            window.API.getConfig().then(config => {
+                minimizeToTrayNotificationCheckbox.checked = config.ShowMinimizeToTrayNotification !== false;
             });
         });
 });

@@ -389,13 +389,32 @@ class NotificationHelper {
 
     static async showInviteRequestNotification(requestData) {
         const senderName = requestData.sender?.name || 'Someone';
-        
+
         return this.showNotification({
             title: 'ChilloutVR Invite Request',
             message: `${senderName} requested an invite from you`,
             type: 'invite',
             icon: 'person_add',
             image: requestData.sender // Pass the whole sender object for base64 access
+        });
+    }
+
+    static async showGroupInviteNotification(inviteData) {
+        const inviterName = inviteData.invitedByName || 'Someone';
+        const groupName = inviteData.groupName || 'a group';
+
+        // The group invite payload uses `groupImage`/`imageHash` rather than the standard `imageUrl`/`imageHash`
+        // that the notification image pipeline expects. Repackage so cached/native/XSOverlay paths all work.
+        const imagePayload = inviteData.groupImage
+            ? { imageUrl: inviteData.groupImage, imageHash: inviteData.imageHash }
+            : null;
+
+        return this.showNotification({
+            title: 'ChilloutVR Group Invite',
+            message: `${inviterName} invited you to ${groupName}`,
+            type: 'invite',
+            icon: 'group_add',
+            image: imagePayload,
         });
     }
 

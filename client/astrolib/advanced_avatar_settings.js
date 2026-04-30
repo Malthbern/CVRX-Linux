@@ -1241,8 +1241,8 @@ export async function loadAdvancedAvatarSettings(avatarId) {
                                 <span class="material-symbols-outlined">folder_off</span>
                             </div>
                             <h3>ChilloutVR Installation Not Found</h3>
-                            <p>Your ChilloutVR installation directory needs to be configured to use advanced avatar settings.</p>
-                            <small>Expected directory: <code>..\\ChilloutVR\\ChilloutVR.exe</code></small>
+                            <p>Your ChilloutVR installation needs to be configured so we can locate your Advanced Avatar Settings.</p>
+                            <small>Expected file: <code>..\\ChilloutVR\\ChilloutVR.exe</code></small>
                             <div class="aas-setup-actions">
                                 <button class="aas-setup-cvr-btn">
                                     <span class="material-symbols-outlined">folder_open</span>
@@ -1323,8 +1323,8 @@ export async function loadAdvancedAvatarSettings(avatarId) {
                                 <span class="material-symbols-outlined">folder_off</span>
                             </div>
                             <h3>Advanced Avatar Settings Directory Not Found</h3>
-                            <p>The Advanced Avatar Settings directory was not found in your ChilloutVR installation.</p>
-                            <small>Expected directory: <code>..\ChilloutVR\ChilloutVR.exe</code></small>
+                            <p>The Advanced Avatar Settings directory was not found.</p>
+                            <small>Expected directory: <code>%AppData%\\..\\LocalLow\\ChilloutVR\\ChilloutVR\\AvatarsAdvancedSettingsProfiles</code></small>
                             <div class="aas-setup-info">
                                 <p><strong>This directory is created automatically when you:</strong></p>
                                 <ul>
@@ -1345,7 +1345,7 @@ export async function loadAdvancedAvatarSettings(avatarId) {
                                 <span class="material-symbols-outlined">tune</span>
                             </div>
                             <h3>No Advanced Avatar Settings Found</h3>
-                            <p>This avatar doesn't have any advanced settings (.advavtr file) in your ChilloutVR installation.</p>
+                            <p>This avatar doesn't have any advanced settings (.advavtr file) saved by ChilloutVR.</p>
                             <small>Advanced avatar settings are created when you customize avatar parameters in-game.</small>
                         </div>
                     `;
