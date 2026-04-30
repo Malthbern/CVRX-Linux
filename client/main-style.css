@@ -4589,6 +4589,22 @@ button {
     border-radius: 0 2px 2px 0;
 }
 
+.notification-group-invite::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(180deg, #AB47BC, #6A1B9A);
+    border-radius: 0 2px 2px 0;
+}
+
+.notification-group-invite .notification-world-icon {
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
 /* Notification Content */
 .notification-content {
     display: flex;

@@ -87,23 +87,31 @@ let currentWorldDetailsId = null; // Track the currently open world details
 // This prevents dismissed invites from reappearing when API updates come in
 const dismissedInvites = new Map(); // Map<inviteId, timestamp>
 const dismissedInviteRequests = new Map(); // Map<inviteRequestId, timestamp>
+const dismissedGroupInvites = new Map(); // Map<groupId, timestamp>
 const DISMISS_TIMEOUT = 10 * 60 * 1000; // 10 minutes in milliseconds (longer than API timeout)
 
 // Function to clean up old dismissed entries
 function cleanupDismissedEntries() {
     const now = Date.now();
-    
+
     // Clean up dismissed invites
     for (const [inviteId, timestamp] of dismissedInvites.entries()) {
         if (now - timestamp > DISMISS_TIMEOUT) {
             dismissedInvites.delete(inviteId);
         }
     }
-    
+
     // Clean up dismissed invite requests
     for (const [inviteRequestId, timestamp] of dismissedInviteRequests.entries()) {
         if (now - timestamp > DISMISS_TIMEOUT) {
             dismissedInviteRequests.delete(inviteRequestId);
+        }
+    }
+
+    // Clean up dismissed group invites
+    for (const [groupId, timestamp] of dismissedGroupInvites.entries()) {
+        if (now - timestamp > DISMISS_TIMEOUT) {
+            dismissedGroupInvites.delete(groupId);
         }
     }
 }
@@ -116,6 +124,11 @@ function isInviteDismissed(inviteId) {
 // Function to check if an invite request is dismissed
 function isInviteRequestDismissed(inviteRequestId) {
     return dismissedInviteRequests.has(inviteRequestId);
+}
+
+// Function to check if a group invite is dismissed
+function isGroupInviteDismissed(groupId) {
+    return dismissedGroupInvites.has(groupId);
 }
 
 // Function to mark an invite as dismissed
@@ -135,6 +148,15 @@ function markInviteRequestDismissed(inviteRequestId) {
     // Also notify the server to prevent desktop notifications
     window.API.markInviteRequestDismissed(inviteRequestId).catch(error => {
         log('Failed to mark invite request as dismissed on server:', error);
+    });
+}
+
+// Function to mark a group invite as dismissed
+function markGroupInviteDismissed(groupId) {
+    dismissedGroupInvites.set(groupId, Date.now());
+    log(`Marked group invite ${groupId} as dismissed`);
+    window.API.markGroupInviteDismissed(groupId).catch(error => {
+        log('Failed to mark group invite as dismissed on server:', error);
     });
 }
 
@@ -2528,8 +2550,121 @@ window.API.onFriendRequests((_event, friendRequests) => {
         homeRequests.prepend(friendRequestNode);
         applyTooltips();
     }
-    
+
     // Update notification count
+    updateNotificationCount();
+});
+
+// Group invite listener — renders pending group invites as cards in the Invites & Requests section
+window.API.onGroupInvitesUpdated((_event, payload) => {
+    const invites = payload?.invites ?? [];
+    log('Group Invites Received!');
+    log(invites);
+
+    const homeRequests = document.querySelector('.home-requests-wrapper');
+
+    // Remove previous group invite cards before re-rendering
+    document.querySelectorAll('.notification-group-invite').forEach(el => el.remove());
+
+    const filteredInvites = invites.filter(invite => invite?.groupId && !isGroupInviteDismissed(invite.groupId));
+
+    if (filteredInvites.length < invites.length) {
+        log(`Filtered out ${invites.length - filteredInvites.length} dismissed group invites`);
+    }
+
+    for (const invite of filteredInvites) {
+        const groupImageNode = createElement('img', {
+            className: 'notification-avatar',
+            src: 'img/ui/placeholder.png',
+            onClick: () => showGroupDetails(invite.groupId),
+        });
+        groupImageNode.dataset.hash = invite.imageHash;
+
+        // Accept: per the CVR backend, RequestJoinGroup also confirms a pending invite
+        const acceptButton = createElement('button', {
+            className: 'notification-action-button notification-accept',
+            innerHTML: '<span class="material-symbols-outlined">check</span>',
+            tooltip: 'Accept Group Invite',
+            onClick: async () => {
+                acceptButton.disabled = true;
+                try {
+                    await window.API.requestJoinGroup(invite.groupId);
+                    pushToast(`Joined ${invite.groupName || 'group'}`, 'confirm');
+                    markGroupInviteDismissed(invite.groupId);
+                    groupInviteNode.remove();
+                    updateNotificationCount();
+                    // Re-fetch so the rest of the app (e.g. My Groups) reflects the change
+                    window.API.refreshGroupInvites().catch(error => log('Failed to refresh group invites:', error));
+                } catch (error) {
+                    log('Failed to accept group invite:', error);
+                    pushToast('Failed to accept group invite', 'error');
+                    acceptButton.disabled = false;
+                }
+            },
+        });
+
+        const declineButton = createElement('button', {
+            className: 'notification-action-button notification-decline',
+            innerHTML: '<span class="material-symbols-outlined">close</span>',
+            tooltip: 'Decline Group Invite',
+            onClick: async () => {
+                declineButton.disabled = true;
+                try {
+                    await window.API.declineGroupInvite(invite.groupId);
+                    pushToast('Group invite declined', 'info');
+                    markGroupInviteDismissed(invite.groupId);
+                    groupInviteNode.remove();
+                    updateNotificationCount();
+                    window.API.refreshGroupInvites().catch(error => log('Failed to refresh group invites:', error));
+                } catch (error) {
+                    log('Failed to decline group invite:', error);
+                    pushToast('Failed to decline group invite', 'error');
+                    declineButton.disabled = false;
+                }
+            },
+        });
+
+        const groupName = invite.groupName || 'a group';
+        const inviterName = invite.invitedByName || 'Someone';
+
+        const groupInviteNode = createElement('div', {
+            className: 'notification-item notification-group-invite',
+            innerHTML: `
+                <div class="notification-content">
+                    <div class="notification-main">
+                        <div class="notification-text">
+                            <span class="notification-sender">${inviterName}</span>
+                            <span class="notification-message">invited you to</span>
+                        </div>
+                        <div class="notification-target">
+                            <div class="notification-world-info">
+                                <span class="material-symbols-outlined notification-world-icon">groups</span>
+                                <span class="notification-world-name notification-group-name">${groupName}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="notification-action">
+                        <div class="notification-action-buttons"></div>
+                    </div>
+                </div>
+            `,
+        });
+
+        // Make the group name clickable to open the group details overlay
+        const groupNameElement = groupInviteNode.querySelector('.notification-group-name');
+        groupNameElement.style.cursor = 'pointer';
+        groupNameElement.addEventListener('click', () => showGroupDetails(invite.groupId));
+
+        const actionButtons = groupInviteNode.querySelector('.notification-action-buttons');
+        actionButtons.append(acceptButton, declineButton);
+
+        const notificationContent = groupInviteNode.querySelector('.notification-content');
+        notificationContent.insertBefore(groupImageNode, notificationContent.firstChild);
+
+        homeRequests.prepend(groupInviteNode);
+    }
+
+    applyTooltips();
     updateNotificationCount();
 });
 
@@ -2907,6 +3042,9 @@ document.querySelectorAll('.settings-tab').forEach(tab => {
 // Handle "Close to System Tray" setting
 const closeToTrayCheckbox = document.getElementById('setting-close-to-tray');
 
+// Handle "Minimize to Tray Notification" setting
+const minimizeToTrayNotificationCheckbox = document.getElementById('setting-minimize-to-tray-notification');
+
 // Handle "Thumbnail Shape" setting
 const thumbnailShapeDropdown = document.getElementById('setting-thumbnail-shape');
 
@@ -2997,6 +3135,12 @@ window.API.getConfig().then(config => {
     if (config && config.CloseToSystemTray !== undefined) {
         closeToTrayCheckbox.checked = config.CloseToSystemTray;
     }
+    if (config && config.ShowMinimizeToTrayNotification !== undefined) {
+        minimizeToTrayNotificationCheckbox.checked = config.ShowMinimizeToTrayNotification;
+    } else {
+        // Default to enabled to preserve previous behavior
+        minimizeToTrayNotificationCheckbox.checked = true;
+    }
     if (config && config.ThumbnailShape !== undefined) {
         thumbnailShapeDropdown.value = config.ThumbnailShape;
         applyThumbnailShape(config.ThumbnailShape);
@@ -3065,6 +3209,20 @@ closeToTrayCheckbox.addEventListener('change', () => {
             // Revert checkbox state if save failed
             window.API.getConfig().then(config => {
                 closeToTrayCheckbox.checked = config.CloseToSystemTray;
+            });
+        });
+});
+
+// Update config when "Minimize to Tray Notification" setting is changed
+minimizeToTrayNotificationCheckbox.addEventListener('change', () => {
+    window.API.updateConfig({ ShowMinimizeToTrayNotification: minimizeToTrayNotificationCheckbox.checked })
+        .then(() => {
+            pushToast('Setting saved', 'confirm');
+        })
+        .catch(err => {
+            pushToast(`Error saving setting: ${err}`, 'error');
+            window.API.getConfig().then(config => {
+                minimizeToTrayNotificationCheckbox.checked = config.ShowMinimizeToTrayNotification !== false;
             });
         });
 });

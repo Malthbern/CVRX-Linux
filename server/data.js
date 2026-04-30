@@ -183,10 +183,17 @@ class Core {
         // Dismissed invites tracking (shared from frontend)
         this.dismissedInvites = new Map(); // Map<inviteId, timestamp>
         this.dismissedInviteRequests = new Map(); // Map<inviteRequestId, timestamp>
+        this.dismissedGroupInvites = new Map(); // Map<groupId, timestamp>
 
         // Notification tracking (server-side)
         this.notifiedInvites = new Map(); // Map<inviteId, timestamp>
         this.notifiedInviteRequests = new Map(); // Map<inviteRequestId, timestamp>
+        this.notifiedGroupInvites = new Map(); // Map<groupId, timestamp>
+
+        // Tracks whether we've done the first group-invite sync since login. The very first sync seeds
+        // `notifiedGroupInvites` silently so pre-existing invites don't fire toast/XSO notifications on
+        // launch — only invites that arrive while CVRX is open should toast.
+        this.groupInvitesInitialized = false;
 
         // Cleanup timeout (10 minutes, same as client)
         this.DISMISS_TIMEOUT = 10 * 60 * 1000;
@@ -223,7 +230,19 @@ class Core {
             }
         }
 
-        log.debug(`[CleanupDismissedAndNotified] Cleanup completed. Dismissed invites: ${this.dismissedInvites.size}, Dismissed requests: ${this.dismissedInviteRequests.size}, Notified invites: ${this.notifiedInvites.size}, Notified requests: ${this.notifiedInviteRequests.size}`);
+        // Clean up dismissed/notified group invites
+        for (const [groupId, timestamp] of this.dismissedGroupInvites.entries()) {
+            if (now - timestamp > this.DISMISS_TIMEOUT) {
+                this.dismissedGroupInvites.delete(groupId);
+            }
+        }
+        for (const [groupId, timestamp] of this.notifiedGroupInvites.entries()) {
+            if (now - timestamp > this.DISMISS_TIMEOUT) {
+                this.notifiedGroupInvites.delete(groupId);
+            }
+        }
+
+        log.debug(`[CleanupDismissedAndNotified] Cleanup completed. Dismissed invites: ${this.dismissedInvites.size}, Dismissed requests: ${this.dismissedInviteRequests.size}, Dismissed group invites: ${this.dismissedGroupInvites.size}, Notified invites: ${this.notifiedInvites.size}, Notified requests: ${this.notifiedInviteRequests.size}, Notified group invites: ${this.notifiedGroupInvites.size}`);
     }
 
     #SetupHandlers() {
@@ -600,6 +619,19 @@ class Core {
 
         ipcMain.handle('is-invite-request-dismissed', (_event, inviteRequestId) => {
             return this.dismissedInviteRequests.has(inviteRequestId);
+        });
+
+        ipcMain.handle('mark-group-invite-dismissed', (_event, groupId) => {
+            this.dismissedGroupInvites.set(groupId, Date.now());
+            log.debug(`[MarkGroupInviteDismissed] Marked group invite ${groupId} as dismissed on server`);
+        });
+
+        ipcMain.handle('is-group-invite-dismissed', (_event, groupId) => {
+            return this.dismissedGroupInvites.has(groupId);
+        });
+
+        ipcMain.handle('refresh-group-invites', async (_event) => {
+            await this.FetchAndUpdateGroupInvites();
         });
     }
 
@@ -1960,8 +1992,9 @@ class Core {
 
     async FetchAndUpdateGroupInvites() {
         const groupInvites = await CVRHttp.GetGroupInvites();
+        const invites = groupInvites?.invites ?? [];
 
-        for (const invite of groupInvites?.invites ?? []) {
+        for (const invite of invites) {
             if (invite?.groupImage) {
                 await LoadImage(invite.groupImage, invite);
             }
@@ -1980,6 +2013,54 @@ class Core {
         // }
 
         this.SendToRenderer('group-invites-updated', groupInvites);
+
+        // First sync after login: seed the notified set so pre-existing pending invites don't fire
+        // toast/XSO notifications on launch. Subsequent fetches (triggered by the GROUP_INVITE WS event)
+        // will see brand-new invites as un-notified and surface them.
+        if (!this.groupInvitesInitialized) {
+            for (const invite of invites) {
+                if (invite?.groupId) {
+                    this.notifiedGroupInvites.set(invite.groupId, Date.now());
+                }
+            }
+            this.groupInvitesInitialized = true;
+            log.debug(`[GroupInviteNotification] Initial sync — seeded ${invites.length} pending group invite(s) as already-notified`);
+            return;
+        }
+
+        // Send system notifications for new group invites if invite notifications are enabled.
+        // Reuse the invite-notification toggle so the user has one switch for all invite-style alerts.
+        if (Config.GetInviteNotificationsEnabled()
+            && invites.length > 0
+            && !NotificationManager.shouldSuppressPostLoginNotifications()) {
+            const newGroupInvitesToNotify = invites.filter((invite) => {
+                if (!invite?.groupId) return false;
+                const isDismissed = this.dismissedGroupInvites.has(invite.groupId);
+                const alreadyNotified = this.notifiedGroupInvites.has(invite.groupId);
+                return !isDismissed && !alreadyNotified;
+            });
+
+            log.debug(`[GroupInviteNotification] Processing ${invites.length} total group invites, ${newGroupInvitesToNotify.length} new ones to notify`);
+
+            for (const invite of newGroupInvitesToNotify) {
+                try {
+                    await NotificationHelper.showGroupInviteNotification(invite);
+                    this.notifiedGroupInvites.set(invite.groupId, Date.now());
+                    log.info(`[GroupInviteNotification] Sent notification for group invite to ${invite.groupName || 'a group'} from ${invite.invitedByName || 'someone'}`);
+                } catch (error) {
+                    log.error('[GroupInviteNotification] Failed to send notification:', error);
+                }
+            }
+        }
+
+        // Group invites can stay pending indefinitely. Refresh the timestamp for any still-pending
+        // invite that's already in `notifiedGroupInvites` so the 10-minute cleanup never expires
+        // tracking for a still-active invite (which would cause it to re-toast on the next fetch).
+        for (const invite of invites) {
+            if (invite?.groupId && this.notifiedGroupInvites.has(invite.groupId)) {
+                this.notifiedGroupInvites.set(invite.groupId, Date.now());
+            }
+        }
     }
 
     //#endregion Groups

@@ -60,6 +60,7 @@ exports.Load = async () => {
         ActiveUserID: null,
         CacheMaxSizeInMegabytes: 1000,
         CloseToSystemTray: false,
+        ShowMinimizeToTrayNotification: true,
         ThumbnailShape: 'hexagonal',
         OnlineFriendsThumbnailShape: 'rounded',
         CVRExecutable: path.join(CVRExecutableDefaultFolderPath, CVRExecutableName),
@@ -285,6 +286,16 @@ exports.UpdateConfig = async (newConfigSettings) => {
         config.CloseToSystemTray = closeToTray;
     }
 
+    if (Object.prototype.hasOwnProperty.call(newConfigSettings, 'ShowMinimizeToTrayNotification')) {
+        const enabled = newConfigSettings.ShowMinimizeToTrayNotification;
+
+        if (typeof enabled !== 'boolean') {
+            throw new Error('[UpdateConfig] ShowMinimizeToTrayNotification should be a boolean value.');
+        }
+
+        config.ShowMinimizeToTrayNotification = enabled;
+    }
+
     if (Object.prototype.hasOwnProperty.call(newConfigSettings, 'ThumbnailShape')) {
         const thumbnailShape = newConfigSettings.ThumbnailShape;
         const validShapes = ['hexagonal', 'square', 'rounded', 'circle'];
@@ -468,6 +479,7 @@ exports.UpdateConfig = async (newConfigSettings) => {
 exports.GetConfig = () => ({
     CacheMaxSizeInMegabytes: config.CacheMaxSizeInMegabytes,
     CloseToSystemTray: config.CloseToSystemTray,
+    ShowMinimizeToTrayNotification: config.ShowMinimizeToTrayNotification,
     ThumbnailShape: config.ThumbnailShape,
     OnlineFriendsThumbnailShape: config.OnlineFriendsThumbnailShape,
     CVRExecutable: config.CVRExecutable,
@@ -490,6 +502,8 @@ exports.GetConfig = () => ({
 exports.GetMaxCacheSize = () => config.CacheMaxSizeInMegabytes;
 
 exports.GetCloseToSystemTray = () => config.CloseToSystemTray;
+
+exports.GetMinimizeToTrayNotificationEnabled = () => config.ShowMinimizeToTrayNotification !== false;
 
 exports.GetCVRPath = GetCVRPath;
 

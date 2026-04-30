@@ -214,15 +214,12 @@ app.whenReady().then(async () => {
         // Prevent default action
         event.preventDefault();
 
-        let minimizeNotification = {
-            title: 'CVRX',
-            body: 'CVRX is still running in the System Tray',
-        };
-
         // Check if we should close to taskbar
         if (Config.GetCloseToSystemTray()) {
             mainWindow.hide();
-            NotificationHelper.showMinimizeNotification();
+            if (Config.GetMinimizeToTrayNotificationEnabled()) {
+                NotificationHelper.showMinimizeNotification();
+            }
         } else {
             mainWindow.destroy();
         }
