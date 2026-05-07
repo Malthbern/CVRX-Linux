@@ -117,4 +117,4 @@ out/
 *.keywords
 
 # Claude-Code
-CLAUDE.md*
+/.claude/
