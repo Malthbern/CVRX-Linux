@@ -934,6 +934,101 @@ async function loadTabContent(tab, entityId) {
         return;
     }
 
+    if (tab === 'bio') {
+        const bioContainer = document.querySelector('#bio-tab .bio-container');
+        if (!bioContainer) return;
+
+        bioContainer.innerHTML = '<div class="loading-indicator">Loading...</div>';
+
+        try {
+            const userInfo = await window.API.getUserById(entityId);
+            const bioContent = userInfo.profileBio || '';
+            const isMyProfile = currentActiveUser && entityId === currentActiveUser.id;
+
+            const renderDisplay = () => {
+                if (isMyProfile) {
+                    bioContainer.innerHTML = `
+                        <div class="bio-content">
+                            ${bioContent ?
+                                `<p class="bio-text">${bioContent}</p>` :
+                                `<p class="bio-placeholder">No bio added</p>`
+                            }
+                        </div>
+                        <button class="edit-bio-button">
+                            <span class="material-symbols-outlined">edit</span>
+                            ${bioContent ? 'Edit Bio' : 'Add Bio'}
+                        </button>
+                    `;
+
+                    const editButton = bioContainer.querySelector('.edit-bio-button');
+                    editButton.onclick = () => {
+                        const editForm = createElement('div', {
+                            className: 'bio-edit-form',
+                            innerHTML: `
+                                <textarea class="bio-textarea" placeholder="Tell others about yourself...">${bioContent}</textarea>
+                                <div class="bio-edit-buttons">
+                                    <button class="save-bio-button">
+                                        <span class="material-symbols-outlined">save</span>
+                                        Save
+                                    </button>
+                                    <button class="cancel-bio-button">
+                                        <span class="material-symbols-outlined">close</span>
+                                        Cancel
+                                    </button>
+                                </div>
+                            `
+                        });
+
+                        bioContainer.innerHTML = '';
+                        bioContainer.appendChild(editForm);
+
+                        const textarea = editForm.querySelector('.bio-textarea');
+                        textarea.focus();
+
+                        const saveButton = editForm.querySelector('.save-bio-button');
+                        const cancelButton = editForm.querySelector('.cancel-bio-button');
+
+                        saveButton.onclick = async () => {
+                            const newBio = textarea.value.trim();
+                            saveButton.disabled = true;
+                            cancelButton.disabled = true;
+                            try {
+                                await window.API.setMyProfileBio(newBio);
+                                loadTabContent('bio', entityId);
+                                pushToast('Bio saved', 'confirm');
+                            } catch (error) {
+                                log('Failed to save bio:');
+                                log(error);
+                                pushToast('Failed to save bio', 'error');
+                                saveButton.disabled = false;
+                                cancelButton.disabled = false;
+                            }
+                        };
+
+                        cancelButton.onclick = () => {
+                            loadTabContent('bio', entityId);
+                        };
+                    };
+                } else {
+                    bioContainer.innerHTML = `
+                        <div class="bio-content">
+                            ${bioContent ?
+                                `<p class="bio-text">${bioContent}</p>` :
+                                `<p class="bio-placeholder">This user hasn't written a bio yet.</p>`
+                            }
+                        </div>
+                    `;
+                }
+            };
+
+            renderDisplay();
+        } catch (error) {
+            bioContainer.innerHTML = `<div class="error-message">Error loading bio</div>`;
+            log('Error loading bio:', error);
+        }
+        return;
+    }
+
     if (tab === 'notes') {
         const notesContainer = document.querySelector('#notes-tab .notes-container');
         if (!notesContainer) return;

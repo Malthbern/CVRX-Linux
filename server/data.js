@@ -301,6 +301,8 @@ class Core {
         ipcMain.handle('get-user-public-worlds', async (_event, userId) => EscapeHtml(await this.GetUserPublicContent(userId, PublicContentType.WORLDS)));
         ipcMain.handle('get-user-public-props', async (_event, userId) => EscapeHtml(await this.GetUserPublicContent(userId, PublicContentType.PROPS)));
         ipcMain.handle('set-friend-note', async (_event, userId, note) => (await CVRHttp.SetFriendNote(userId, note))?.message);
+        ipcMain.handle('set-my-profile-bio', async (_event, profileBio) => (await CVRHttp.SetMyProfileBio(profileBio))?.message);
+        ipcMain.handle('set-my-profile-pronouns', async (_event, profilePronouns) => (await CVRHttp.SetMyProfilePronouns(profilePronouns))?.message);
 
         ipcMain.handle('get-world-by-id', async (_event, worldId) => EscapeHtml(await this.GetWorldById(worldId)));
         ipcMain.handle('get-world-meta-by-id', async (_event, worldId) => EscapeHtml(await CVRHttp.GetWorldMetaById(worldId)));

@@ -46,6 +46,8 @@ contextBridge.exposeInMainWorld('API', {
     getUserPublicProps: (userId) => ipcRenderer.invoke('get-user-public-props', userId),
     getUserPublicWorlds: (userId) => ipcRenderer.invoke('get-user-public-worlds', userId),
     setFriendNote: (userId, note) => ipcRenderer.invoke('set-friend-note', userId, note),
+    setMyProfileBio: (profileBio) => ipcRenderer.invoke('set-my-profile-bio', profileBio),
+    setMyProfilePronouns: (profilePronouns) => ipcRenderer.invoke('set-my-profile-pronouns', profilePronouns),
 
     getWorldById: (worldId) => ipcRenderer.invoke('get-world-by-id', worldId),
     getWorldMetaById: (worldId) => ipcRenderer.invoke('get-world-meta-by-id', worldId),

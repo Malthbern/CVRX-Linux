@@ -1,4 +1,5 @@
 const axios = require('axios');
+const FormData = require('form-data');
 const utils = require('./utils');
 const {createReadStream} = require('node:fs');
 
@@ -42,6 +43,33 @@ async function Post(url, data, authenticated = true, apiVersion = 1) {
     }
     catch (error) {
         log.error(`[Post] [Error] [${authenticated ? '' : 'Non-'}Auth] ${url}`, error.toString(), error.stack, error?.response?.data);
+        if (error?.response?.data?.message) {
+            throw new Error(error.response.data.message);
+        }
+        throw new Error(`Error:\n${error.stack}\n${error.toString()}`);
+    }
+}
+
+async function PostForm(url, fields, authenticated = true, apiVersion = 1) {
+    try {
+        const form = new FormData();
+        for (const [name, value] of Object.entries(fields)) {
+            if (value === undefined || value === null) continue;
+            form.append(name, value);
+        }
+        const axiosClient = authenticated ? (apiVersion === 1 ? CVRApi : CVRApiV2) : UnauthenticatedCVRApi;
+        const response = await axiosClient.post(url, form, {
+            headers: {
+                ...axiosClient.defaults.headers.common,
+                ...form.getHeaders(),
+            },
+            maxBodyLength: Infinity,
+        });
+        log.debug(`[PostForm] [${response.status}] [${authenticated ? '' : 'Non-'}Auth] ${url}`, response.data);
+        return response.data;
+    }
+    catch (error) {
+        log.error(`[PostForm] [Error] [${authenticated ? '' : 'Non-'}Auth] ${url}`, error.toString(), error.stack, error?.response?.data);
         if (error?.response?.data?.message) {
             throw new Error(error.response.data.message);
         }
@@ -267,6 +295,8 @@ exports.GetUserPublicAvatars = async (userId) => await Get(`/users/${userId}/ava
 exports.GetUserPublicWorlds = async (userId) => await Get(`/users/${userId}/worlds`);
 exports.GetUserPublicSpawnables = async (userId) => await Get(`/users/${userId}/spawnables`);
 exports.SetFriendNote = async (userId, note) => await Post(`/users/${userId}/note`, { note: note });
+exports.SetMyProfileBio = async (profileBio) => await PostForm('/users/self', { ProfileBio: profileBio });
+exports.SetMyProfilePronouns = async (profilePronouns) => await PostForm('/users/self', { ProfilePronouns: profilePronouns });
 
 // Avatars
 exports.GetMyAvatars = async () => await Get('/avatars');
