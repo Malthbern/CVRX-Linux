@@ -590,7 +590,8 @@ function renderPronounsDisplay(container, currentValue, isMyProfile, onEdit) {
     }
 }
 
-// Swap the pronouns row into edit mode with an input and save/cancel controls.
+// Swap the pronouns row into edit mode with an input and a single done button.
+// Done commits if the value changed, otherwise it just dismisses the editor.
 function enterPronounsEditMode(container, currentValue, onSaved) {
     container.innerHTML = '';
     container.classList.add('user-details-pronouns-editing');
@@ -604,55 +605,56 @@ function enterPronounsEditMode(container, currentValue, onSaved) {
     input.maxLength = 32;
     input.placeholder = 'e.g. she/her';
 
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'user-details-pronouns-save';
-    saveBtn.title = 'Save';
-    saveBtn.innerHTML = '<span class="material-symbols-outlined">check</span>';
+    const doneBtn = document.createElement('button');
+    doneBtn.className = 'user-details-pronouns-done';
+    doneBtn.title = 'Done';
+    doneBtn.innerHTML = '<span class="material-symbols-outlined">check</span>';
 
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'user-details-pronouns-cancel';
-    cancelBtn.title = 'Cancel';
-    cancelBtn.innerHTML = '<span class="material-symbols-outlined">close</span>';
-
-    container.append(input, saveBtn, cancelBtn);
+    container.append(input, doneBtn);
 
     input.focus();
     input.select();
 
-    const doSave = async () => {
+    const finish = (value) => {
+        // Defer the re-render so the click that triggered this finishes bubbling
+        // first — otherwise it lands on the freshly-restored container onclick
+        // and re-opens the editor.
+        setTimeout(() => onSaved(value), 0);
+    };
+
+    const doDone = async () => {
         const newValue = input.value.trim();
         if (newValue === currentValue) {
-            onSaved(currentValue);
+            finish(currentValue);
             return;
         }
-        saveBtn.disabled = true;
-        cancelBtn.disabled = true;
+        doneBtn.disabled = true;
         input.disabled = true;
         try {
             await window.API.setMyProfilePronouns(newValue);
             pushToast('Pronouns updated', 'confirm');
-            onSaved(newValue);
+            finish(newValue);
         } catch (error) {
             log('Failed to update pronouns:');
             log(error);
             pushToast('Failed to update pronouns', 'error');
-            saveBtn.disabled = false;
-            cancelBtn.disabled = false;
+            doneBtn.disabled = false;
             input.disabled = false;
             input.focus();
         }
     };
-    const doCancel = () => onSaved(currentValue);
 
-    saveBtn.addEventListener('click', doSave);
-    cancelBtn.addEventListener('click', doCancel);
+    doneBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        doDone();
+    });
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            doSave();
+            doDone();
         } else if (e.key === 'Escape') {
             e.preventDefault();
-            doCancel();
+            finish(currentValue);
         }
     });
 }

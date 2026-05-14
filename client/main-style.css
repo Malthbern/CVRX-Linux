@@ -5476,8 +5476,7 @@ button {
     border-color: var(--color-text-secondary);
 }
 
-.user-details-pronouns-save,
-.user-details-pronouns-cancel {
+.user-details-pronouns-done {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -5492,19 +5491,16 @@ button {
     transition: background 0.15s ease;
 }
 
-.user-details-pronouns-save:hover,
-.user-details-pronouns-cancel:hover {
+.user-details-pronouns-done:hover {
     background: var(--color-background-tertiary);
 }
 
-.user-details-pronouns-save:disabled,
-.user-details-pronouns-cancel:disabled {
+.user-details-pronouns-done:disabled {
     cursor: not-allowed;
     opacity: 0.6;
 }
 
-.user-details-pronouns-save .material-symbols-outlined,
-.user-details-pronouns-cancel .material-symbols-outlined {
+.user-details-pronouns-done .material-symbols-outlined {
     font-size: 16px;
 }
 
