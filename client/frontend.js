@@ -9,8 +9,9 @@ import {
     generateInstanceJoinLink,
     openDeepLink 
 } from './astrolib/deeplinks.js';
-import { 
+import {
     DetailsType,
+    decodeHtmlEntities,
     getCurrentEntityType,
     getEntityClassPrefix,
     updateDetailsWindowClasses,
@@ -965,7 +966,7 @@ async function loadTabContent(tab, entityId) {
                         const editForm = createElement('div', {
                             className: 'bio-edit-form',
                             innerHTML: `
-                                <textarea class="bio-textarea" placeholder="Tell others about yourself...">${bioContent}</textarea>
+                                <textarea class="bio-textarea" maxlength="1024" placeholder="Tell others about yourself...">${bioContent}</textarea>
                                 <div class="bio-edit-buttons">
                                     <button class="save-bio-button">
                                         <span class="material-symbols-outlined">save</span>
@@ -2131,19 +2132,19 @@ window.API.onActiveInstancesUpdate((_event, activeInstancesData) => {
                 onClick: () => ShowDetailsWrapper(DetailsType.User, member.id),
             });
             userIcon.dataset.hash = member.imageHash;
-            userIcon.dataset.tooltip = member.name;
+            userIcon.dataset.tooltip = decodeHtmlEntities(member.name);
             
             if (member.isBlocked) {
                 userIcon.classList.add('active-instance-node--blocked');
-                userIcon.dataset.tooltip = `<span class="tooltip-blocked">${userIcon.dataset.tooltip} <small>(Blocked)</small></span>`;
+                userIcon.dataset.tooltip = `${userIcon.dataset.tooltip} (Blocked)`;
                 elementsOfBlocked.push(userIcon);
                 continue;
             }
-            
+
             // Check if this member is the current logged-in user
             if (currentActiveUser && member.id === currentActiveUser.id) {
                 userIcon.classList.add('icon-is-you');
-                userIcon.dataset.tooltip = `${member.name} <small style="color: rgba(255,255,255,0.6); font-size: 0.85em;">(You)</small>`;
+                userIcon.dataset.tooltip = `${decodeHtmlEntities(member.name)} (You)`;
                 elementsOfCurrentUser.push(userIcon);
                 continue;
             }
@@ -4180,7 +4181,7 @@ function showManageFriendNotificationsModal(friendsWithNotifications) {
             
             const friendName = createElement('div', {
                 className: 'manage-notifications-friend-name',
-                textContent: friend.name
+                textContent: decodeHtmlEntities(friend.name)
             });
             
             const friendStatus = createElement('div', {

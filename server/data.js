@@ -117,6 +117,7 @@ function EscapeStringFromHtml(text) {
 }
 
 function EscapeHtml(obj, firstIteration = true) {
+    if (typeof obj === 'string') return EscapeStringFromHtml(obj);
     if (obj) {
         // Deep clone to prevent affecting the original objects (we're caching some of those)
         if (firstIteration) obj = Utils.DeepClone(obj);
@@ -487,7 +488,7 @@ class Core {
         // Socket Events
         CVRWebsocket.EventEmitter.on(CVRWebsocket.SocketEvents.CONNECTED, () => this.recentActivityInitialFriends = true);
         CVRWebsocket.EventEmitter.on(CVRWebsocket.SocketEvents.DEAD, () => this.SendToRenderer('socket-died'));
-        CVRWebsocket.EventEmitter.on(CVRWebsocket.SocketEvents.RECONNECTION_FAILED, (msg) => this.SendToRenderer('notification', msg, ToastTypes.BAD));
+        CVRWebsocket.EventEmitter.on(CVRWebsocket.SocketEvents.RECONNECTION_FAILED, (msg) => this.SendToRenderer('notification', EscapeHtml(msg), ToastTypes.BAD));
 
         // Setup Handlers for the websocket
         CVRWebsocket.EventEmitter.on(CVRWebsocket.ResponseType.ONLINE_FRIENDS, (friendsInfo) => this.FriendsUpdate(false, friendsInfo));
@@ -497,8 +498,8 @@ class Core {
         CVRWebsocket.EventEmitter.on(CVRWebsocket.ResponseType.FRIEND_REQUESTS, (friendRequests) => this.UpdateFriendRequests(friendRequests, false));
 
         // Notifications
-        CVRWebsocket.EventEmitter.on(CVRWebsocket.ResponseType.MENU_POPUP, (_data, msg) => this.SendToRenderer('notification', msg, ToastTypes.INFO));
-        CVRWebsocket.EventEmitter.on(CVRWebsocket.ResponseType.HUD_MESSAGE, (_data, msg) => this.SendToRenderer('notification', msg, ToastTypes.INFO));
+        CVRWebsocket.EventEmitter.on(CVRWebsocket.ResponseType.MENU_POPUP, (_data, msg) => this.SendToRenderer('notification', EscapeHtml(msg), ToastTypes.INFO));
+        CVRWebsocket.EventEmitter.on(CVRWebsocket.ResponseType.HUD_MESSAGE, (_data, msg) => this.SendToRenderer('notification', EscapeHtml(msg), ToastTypes.INFO));
 
         // Mature Content
         CVRWebsocket.EventEmitter.on(CVRWebsocket.ResponseType.MATURE_CONTENT_UPDATE, (matureContentInfo) => this.UpdateMatureContentConfigWs(matureContentInfo));
@@ -758,13 +759,13 @@ class Core {
             await LoadImage(activeCredential.ImageUrl, activeCredential);
         }
 
-        this.SendToRenderer('page-login', availableCredentials);
+        this.SendToRenderer('page-login', EscapeHtml(availableCredentials));
     }
 
     async GetOurUserInfo() {
         this.ourUser = await this.GetUserById(this.ourUserId);
         await Config.SetActiveUserImage(this.ourUser?.imageUrl);
-        this.SendToRenderer('active-user-load', this.ourUser);
+        this.SendToRenderer('active-user-load', EscapeHtml(this.ourUser));
     }
 
     async GetOurUserAvatars() {
@@ -783,7 +784,7 @@ class Core {
                 await LoadImage(ourAvatar.imageUrl, ourAvatar);
             }
         }
-        this.SendToRenderer('active-user-avatars-load', ourAvatars);
+        this.SendToRenderer('active-user-avatars-load', EscapeHtml(ourAvatars));
     }
 
     async GetOurUserProps() {
@@ -802,7 +803,7 @@ class Core {
                 await LoadImage(ourProp.imageUrl, ourProp);
             }
         }
-        this.SendToRenderer('active-user-props-load', ourProps);
+        this.SendToRenderer('active-user-props-load', EscapeHtml(ourProps));
     }
 
     async GetOurUserWorlds() {
@@ -857,7 +858,7 @@ class Core {
             allWorlds = allWorlds.map(world => ({ ...world, categories: [WorldCategories.Mine] }));
         }
 
-        this.SendToRenderer('active-user-worlds-load', allWorlds);
+        this.SendToRenderer('active-user-worlds-load', EscapeHtml(allWorlds));
     }
 
     async UpdateRecentActivity(updateType, updateInfo) {
@@ -1034,7 +1035,7 @@ class Core {
         this.recentActivity = this.recentActivity.slice(0, maxCount);
 
         // Send recent activities update to the view
-        this.SendToRenderer('recent-activity-update', this.recentActivity);
+        this.SendToRenderer('recent-activity-update', EscapeHtml(this.recentActivity));
     }
 
     async FriendsUpdate(isRefresh, friendsInfo) {
@@ -1119,7 +1120,7 @@ class Core {
         if (isRefresh) this.friends = newFriendsObject;
 
         // Send the friend results to the main window
-        this.SendToRenderer('friends-refresh', Object.values(this.friends), isRefresh);
+        this.SendToRenderer('friends-refresh', EscapeHtml(Object.values(this.friends)), isRefresh);
 
         // Handle the activity update
         if (!isRefresh) {
@@ -1173,7 +1174,7 @@ class Core {
         //     "instanceName": "Sakura Hotsprings (#811786)",
         //     "receiverId": "4a1661f1-2eeb-426e-92ec-1b2f08e609b3"
         // }]
-        this.SendToRenderer('invites', invites);
+        this.SendToRenderer('invites', EscapeHtml(invites));
 
         // Send system notifications for new invites if enabled
         if (Config.GetInviteNotificationsEnabled() && 
@@ -1225,7 +1226,7 @@ class Core {
         //     },
         //     "receiverId": "4a1661f1-2eeb-426e-92ec-1b2f08e609b3"
         // }]
-        this.SendToRenderer('invite-requests', requestInvites);
+        this.SendToRenderer('invite-requests', EscapeHtml(requestInvites));
 
         // Send system notifications for new invite requests if enabled
         if (Config.GetInviteRequestNotificationsEnabled() && 
@@ -1277,7 +1278,7 @@ class Core {
 
     async UpdateCategories() {
         this.categories = await CVRHttp.GetCategories();
-        this.SendToRenderer('categories-updated', this.categories);
+        this.SendToRenderer('categories-updated', EscapeHtml(this.categories));
     }
 
     async AssignCategory(type, contentGuid, categoryIds) {
@@ -1396,7 +1397,7 @@ class Core {
                 await LoadImage(world.imageUrl, world);
             }
         }
-        this.SendToRenderer('worlds-category-requests', categoryId, worldEntries);
+        this.SendToRenderer('worlds-category-requests', categoryId, EscapeHtml(worldEntries));
 
         return worldEntries;
 
@@ -1527,7 +1528,7 @@ class Core {
             }
             instanceIdsToRemove.forEach(k => delete this.activeInstancesDetails[k]);
 
-            this.SendToRenderer('active-instances-update', Object.values(this.activeInstancesDetails));
+            this.SendToRenderer('active-instances-update', EscapeHtml(Object.values(this.activeInstancesDetails)));
         }
         catch (err) {
             log.error(`[ActiveInstancesUpdate] ${err.toString()}`);
@@ -1713,7 +1714,7 @@ class Core {
         //     "name": "Kafeijao",
         //     "imageUrl": "https://files.abidata.io/user_images/4a1661f1-2eeb-426e-92ec-1b2f08e609b3.png"
         // }]
-        this.SendToRenderer('friend-requests', Object.values(this.friendRequests));
+        this.SendToRenderer('friend-requests', EscapeHtml(Object.values(this.friendRequests)));
     }
 
     async GetContentShares(contentType, contentId) {
@@ -2014,7 +2015,7 @@ class Core {
         //     ]
         // }
 
-        this.SendToRenderer('group-invites-updated', groupInvites);
+        this.SendToRenderer('group-invites-updated', EscapeHtml(groupInvites));
 
         // First sync after login: seed the notified set so pre-existing pending invites don't fire
         // toast/XSO notifications on launch. Subsequent fetches (triggered by the GROUP_INVITE WS event)

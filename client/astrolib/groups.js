@@ -338,7 +338,8 @@ export async function showGroupDetails(groupId) {
 
         if (group.tag) {
             const tagRow = createElement('div', { className: 'group-sidebar-row' });
-            tagRow.innerHTML = `<span class="material-symbols-outlined">sell</span><span>[${decodeHtmlEntities(group.tag)}]</span>`;
+            tagRow.innerHTML = '<span class="material-symbols-outlined">sell</span><span></span>';
+            tagRow.children[1].textContent = `[${decodeHtmlEntities(group.tag)}]`;
             infoRows.appendChild(tagRow);
         }
 
@@ -929,7 +930,7 @@ export async function handleGroupsRefresh(groups) {
                     <img src="${imgSrc}" data-hash="${group.imageHash}" class="hidden"/>
                 </div>
                 <div class="card-content">
-                    <p class="card-name">${decodeHtmlEntities(group.name)}</p>
+                    <p class="card-name"></p>
                     <div class="card-detail">
                         <span class="material-symbols-outlined">group</span>${group.memberCount || 0} members
                     </div>
@@ -940,6 +941,7 @@ export async function handleGroupsRefresh(groups) {
             `,
             onClick: () => showGroupDetails(group.id),
         });
+        groupNode.querySelector('.card-name').textContent = decodeHtmlEntities(group.name);
 
         groupNode.dataset.ownership = group._ownership;
 
