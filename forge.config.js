@@ -3,6 +3,12 @@ const { version } = require('./package.json');
 module.exports = {
     packagerConfig: {
         icon: 'icon/cvrx-logo',
+        // Force the inner binary filename to match package.json `name` (lowercase).
+        // maker-deb / maker-rpm derive the expected binary filename from `name`
+        // and fail if the packager produced one cased after `productName` instead.
+        // Affects only the binary filename inside the package — the Windows
+        // installer, .app bundle, and shortcut names still use productName.
+        executableName: 'cvrx',
     },
     rebuildConfig: {},
     makers: [
