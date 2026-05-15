@@ -966,7 +966,7 @@ async function loadTabContent(tab, entityId) {
                         const editForm = createElement('div', {
                             className: 'bio-edit-form',
                             innerHTML: `
-                                <textarea class="bio-textarea" maxlength="1024" placeholder="Tell others about yourself...">${bioContent}</textarea>
+                                <textarea class="bio-textarea" maxlength="512" placeholder="Tell others about yourself...">${bioContent}</textarea>
                                 <div class="bio-edit-buttons">
                                     <button class="save-bio-button">
                                         <span class="material-symbols-outlined">save</span>
