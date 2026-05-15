@@ -2,7 +2,7 @@ const path = require('path');
 const axios = require('axios');
 const fs = require('fs');
 
-const {app, dialog} = require('electron');
+const {app, dialog, shell} = require('electron');
 const {pipeline} = require('stream/promises');
 
 const Config = require('./config');
@@ -14,6 +14,27 @@ const UpdaterPath = path.join(AppDataPath, 'CVRUpdater');
 
 const windowsPlatform = 'win32';
 const latestRelease = 'https://api.github.com/repos/AstroDogeDX/CVRX/releases/latest';
+
+// Per-platform asset preferences. The picker walks the array in order and
+// returns the first asset whose name ends with one of the listed extensions.
+// Windows can auto-install the Squirrel .exe; everything else just gets a
+// "open in browser" link to the release asset (or the release page itself
+// if no preferred asset exists).
+const platformAssetExtensions = {
+    'win32': ['.exe'],
+    'darwin': ['.dmg'],
+    // Linux: prefer AppImage (universal), then deb, then rpm.
+    'linux': ['.AppImage', '.deb', '.rpm'],
+};
+
+function pickAssetForPlatform(assets) {
+    const exts = platformAssetExtensions[process.platform] || [];
+    for (const ext of exts) {
+        const match = assets.find(a => a.name.toLowerCase().endsWith(ext.toLowerCase()));
+        if (match) return match;
+    }
+    return null;
+}
 
 const currentVersion = `v${app.getVersion()}`;
 
@@ -103,13 +124,6 @@ exports.CheckLatestRelease = async (mainWindow, bypassIgnores = false) => {
             return { hasUpdates: false, msg: msg };
         }
 
-        // We're only supporting auto update on Windows
-        if (process.platform !== windowsPlatform) {
-            const msg = `This platform (${process.platform}) doesn't support auto-updates. You will need to install the update manually :(`;
-            log.info(`[CheckLatestRelease] ${msg}`);
-            return { hasUpdates: true, msg: msg };
-        }
-
         const ignoredVersion = Config.GetUpdaterIgnoreVersion();
         log.debug(`[CheckLatestRelease] Current version: ${currentVersion}, Latest version: ${tagName}, Ignored version: ${ignoredVersion}`);
         if (!bypassIgnores && ignoredVersion && tagName === ignoredVersion) {
@@ -118,47 +132,50 @@ exports.CheckLatestRelease = async (mainWindow, bypassIgnores = false) => {
             return { hasUpdates: true, msg: msg };
         }
 
-        // Iterate the assets and find an .exe
-        for (const asset of data.assets) {
-            if (path.extname(asset.name) !== '.exe') continue;
+        // Pick the best asset for this platform. If we can't find one (e.g.
+        // a release missing the platform's installer), fall back to opening
+        // the release page so the user can pick something themselves.
+        const asset = pickAssetForPlatform(data.assets || []);
+        const isWindows = process.platform === windowsPlatform;
+        const autoInstall = isWindows && !!asset;
 
-            const changeLogs = data.body;
-            const updateInfo = {
-                tagName,
-                changeLogs,
-                downloadUrl: asset.browser_download_url,
-                fileName: asset.name
-            };
+        const changeLogs = data.body;
+        const updateInfo = {
+            tagName,
+            changeLogs,
+            downloadUrl: asset ? asset.browser_download_url : data.html_url,
+            fileName: asset ? asset.name : null,
+            autoInstall,
+        };
 
-            // Automatically show the update modal when not bypassing ignores (i.e., during automatic checks)
-            if (!bypassIgnores && mainWindow && mainWindow.webContents) {
-                dialogOpened = true;
-                log.info(`[CheckLatestRelease] Automatically showing update modal for version ${tagName}`);
-                try {
-                    mainWindow.webContents.send('update-available', updateInfo);
-                    
-                    // Also send a custom notification
-                    await NotificationHelper.showUpdateNotification({
-                        version: tagName,
-                        changeLogs,
-                        downloadUrl: asset.browser_download_url,
-                        fileName: asset.name
-                    });
-                    log.info(`[CheckLatestRelease] Sent custom notification for update ${tagName}`);
-                } catch (sendError) {
-                    log.error(`[CheckLatestRelease] Failed to send update-available event: ${sendError}`);
-                    dialogOpened = false; // Reset flag if sending fails
-                }
-            }
-
-            return { 
-                hasUpdates: true, 
-                msg: `A new version (${tagName}) is available!`,
-                updateInfo
-            };
+        if (!asset) {
+            log.warn(`[CheckLatestRelease] No matching asset found for ${process.platform} in release ${tagName}; will link to the release page.`);
         }
 
-        log.error('[CheckLatestRelease] Failed to find a file ending in .exe in the Github Latest Releases!');
+        // Show the update modal/notification on automatic checks.
+        if (!bypassIgnores && mainWindow && mainWindow.webContents) {
+            dialogOpened = true;
+            log.info(`[CheckLatestRelease] Automatically showing update modal for version ${tagName} (autoInstall=${autoInstall})`);
+            try {
+                mainWindow.webContents.send('update-available', updateInfo);
+                await NotificationHelper.showUpdateNotification({
+                    version: tagName,
+                    changeLogs,
+                    downloadUrl: updateInfo.downloadUrl,
+                    fileName: updateInfo.fileName,
+                });
+                log.info(`[CheckLatestRelease] Sent custom notification for update ${tagName}`);
+            } catch (sendError) {
+                log.error(`[CheckLatestRelease] Failed to send update-available event: ${sendError}`);
+                dialogOpened = false;
+            }
+        }
+
+        return {
+            hasUpdates: true,
+            msg: `A new version (${tagName}) is available!`,
+            updateInfo,
+        };
     } catch (error) {
         dialogOpened = false;
         log.error(`[CheckLatestRelease] [Error] ${latestRelease}`, error.toString());
@@ -171,7 +188,15 @@ exports.HandleUpdateAction = async (action, updateInfo) => {
     try {
         switch (action) {
             case 'download':
-                await DownloadFile(updateInfo.downloadUrl, updateInfo.fileName);
+                // Only Windows can self-install. For everything else, open the
+                // release page (or direct asset link) in the user's browser
+                // so they can grab the installer themselves.
+                if (updateInfo.autoInstall) {
+                    await DownloadFile(updateInfo.downloadUrl, updateInfo.fileName);
+                } else {
+                    log.info(`[HandleUpdateAction] Opening update URL in browser: ${updateInfo.downloadUrl}`);
+                    await shell.openExternal(updateInfo.downloadUrl);
+                }
                 break;
             case 'askLater':
                 // Clear ignore version setting

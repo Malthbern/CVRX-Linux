@@ -44,6 +44,19 @@ module.exports = {
             },
         },
         {
+            // Community-maintained AppImage maker — covers distros that don't
+            // use deb/rpm (Arch, NixOS, Steam Deck/SteamOS, etc.) plus anyone
+            // who prefers a portable single-file binary.
+            name: '@reforged/maker-appimage',
+            config: {
+                options: {
+                    icon: 'icon/cvrx-logo.png',
+                    categories: ['Network', 'Utility'],
+                    bin: 'CVRX',
+                },
+            },
+        },
+        {
             name: '@electron-forge/maker-dmg',
             config: {
                 overwrite: true,

@@ -400,22 +400,26 @@ function promptUpdate(updateInfo) {
     
     const promptButtons = createElement('div', { className: 'prompt-buttons' });
 
+    // On Windows we can download + auto-install. On other platforms the same
+    // button just opens the release page in the user's browser — they download
+    // and install whichever package format they want (deb/rpm/AppImage/dmg).
     const downloadButton = createElement('button', {
         className: 'prompt-btn-confirm update-primary-action',
-        textContent: 'Download and Install',
+        textContent: updateInfo.autoInstall ? 'Download and Install' : 'View Release on GitHub',
         onClick: async () => {
             try {
-                // Close the modal immediately when user clicks download
                 newPrompt.remove();
                 promptShade.style.display = 'none';
-                
-                // Show toast notification to inform user about the download process
-                pushToast('Downloading update... The app will restart automatically once installation begins.', 'info');
-                
-                // Start the download (progress modal will appear automatically)
+
+                if (updateInfo.autoInstall) {
+                    pushToast('Downloading update... The app will restart automatically once installation begins.', 'info');
+                } else {
+                    pushToast('Opening release page in your browser...', 'info');
+                }
+
                 await window.API.updateAction('download', updateInfo);
             } catch (error) {
-                pushToast('Failed to download update', 'error');
+                pushToast(updateInfo.autoInstall ? 'Failed to download update' : 'Failed to open release page', 'error');
             }
         },
     });
