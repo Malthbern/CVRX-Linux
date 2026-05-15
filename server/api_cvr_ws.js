@@ -305,7 +305,10 @@ function ConnectWebsocket(username, accessKey) {
                 const { ResponseType: responseType, Message: message, Data: data } = JSON.parse(messageBuffer.toString());
                 if (Object.values(RESPONSE_TYPE).includes(responseType)) {
                     const processedData = preProcessEntities(responseType, data);
-                    EventEmitter.emit(responseType, processedData, message);
+                    // HTML-escape every string before fanning out to listeners — this is the WS-side
+                    // chokepoint that mirrors the one in api_cvr_http.js. Anything downstream can
+                    // render the data via innerHTML without worrying about smuggled markup.
+                    EventEmitter.emit(responseType, Utils.EscapeHtml(processedData), Utils.EscapeHtml(message));
                     const logObj = { 'API Original Data': data, 'CVRX Processed Data': processedData };
                     log.debug(`[ConnectWebsocket] [onMessage] {${socket.uniqueId}} Type: ${GetResponseTypeName(responseType)} (${responseType}), Msg: ${message}`, logObj);
                 }

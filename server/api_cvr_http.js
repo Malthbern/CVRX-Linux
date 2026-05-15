@@ -20,11 +20,18 @@ const UnauthenticatedCVRApi = axios.create({
     },
 });
 
-async function Get(url, authenticated = true, apiVersion = 1) {
+// Every helper escapes string fields in its response by default. This is the
+// single chokepoint for HTML-sanitising data we pull from the CVR API — once
+// it leaves these functions everything downstream can render it safely.
+// Pass `escapeResponse: false` only when the caller needs the raw bytes
+// (e.g. Authenticate, which feeds `username` / `accessKey` into HTTP headers
+// for subsequent requests and must not have them entity-escaped).
+
+async function Get(url, authenticated = true, apiVersion = 1, escapeResponse = true) {
     try {
         const response = await (authenticated ? (apiVersion === 1 ? CVRApi : CVRApiV2) : UnauthenticatedCVRApi).get(url);
         log.debug(`[GET] [${response.status}] [${authenticated ? '' : 'Non-'}Auth] ${url}`, response.data);
-        return response.data.data;
+        return escapeResponse ? utils.EscapeHtml(response.data.data) : response.data.data;
     }
     catch (error) {
         log.error(`[GET] [Error] [${authenticated ? '' : 'Non-'}Auth] ${url}`, error.toString(), error.stack, error?.response?.data);
@@ -35,11 +42,11 @@ async function Get(url, authenticated = true, apiVersion = 1) {
     }
 }
 
-async function Post(url, data, authenticated = true, apiVersion = 1) {
+async function Post(url, data, authenticated = true, apiVersion = 1, escapeResponse = true) {
     try {
         const response = await (authenticated ? (apiVersion === 1 ? CVRApi : CVRApiV2) : UnauthenticatedCVRApi).post(url, data);
         log.debug(`[Post] [${response.status}] [${authenticated ? '' : 'Non-'}Auth] ${url}`, response.data);
-        return response.data;
+        return escapeResponse ? utils.EscapeHtml(response.data) : response.data;
     }
     catch (error) {
         log.error(`[Post] [Error] [${authenticated ? '' : 'Non-'}Auth] ${url}`, error.toString(), error.stack, error?.response?.data);
@@ -50,7 +57,7 @@ async function Post(url, data, authenticated = true, apiVersion = 1) {
     }
 }
 
-async function PostForm(url, fields, authenticated = true, apiVersion = 1) {
+async function PostForm(url, fields, authenticated = true, apiVersion = 1, escapeResponse = true) {
     try {
         const form = new FormData();
         for (const [name, value] of Object.entries(fields)) {
@@ -66,7 +73,7 @@ async function PostForm(url, fields, authenticated = true, apiVersion = 1) {
             maxBodyLength: Infinity,
         });
         log.debug(`[PostForm] [${response.status}] [${authenticated ? '' : 'Non-'}Auth] ${url}`, response.data);
-        return response.data;
+        return escapeResponse ? utils.EscapeHtml(response.data) : response.data;
     }
     catch (error) {
         log.error(`[PostForm] [Error] [${authenticated ? '' : 'Non-'}Auth] ${url}`, error.toString(), error.stack, error?.response?.data);
@@ -77,11 +84,11 @@ async function PostForm(url, fields, authenticated = true, apiVersion = 1) {
     }
 }
 
-async function Patch(url, data, authenticated = true, apiVersion = 1) {
+async function Patch(url, data, authenticated = true, apiVersion = 1, escapeResponse = true) {
     try {
         const response = await (authenticated ? (apiVersion === 1 ? CVRApi : CVRApiV2) : UnauthenticatedCVRApi).patch(url, data);
         log.debug(`[Patch] [${response.status}] [${authenticated ? '' : 'Non-'}Auth] ${url}`, response.data);
-        return response.data;
+        return escapeResponse ? utils.EscapeHtml(response.data) : response.data;
     }
     catch (error) {
         log.error(`[Patch] [Error] [${authenticated ? '' : 'Non-'}Auth] ${url}`, error.toString(), error.stack, error?.response?.data);
@@ -92,7 +99,7 @@ async function Patch(url, data, authenticated = true, apiVersion = 1) {
     }
 }
 
-async function Put(url, filePathsMap, authenticated = true, apiVersion = 1) {
+async function Put(url, filePathsMap, authenticated = true, apiVersion = 1, escapeResponse = true) {
     try {
         const form = new FormData();
         // Iterate over the filePathsMap and append each file to the form
@@ -111,7 +118,7 @@ async function Put(url, filePathsMap, authenticated = true, apiVersion = 1) {
                 maxBodyLength: Infinity,
             });
         log.debug(`[Put] [${response.status}] [${authenticated ? '' : 'Non-'}Auth] ${url}`, response.data);
-        return response.data;
+        return escapeResponse ? utils.EscapeHtml(response.data) : response.data;
     }
     catch (error) {
         log.error(`[Put] [Error] [${authenticated ? '' : 'Non-'}Auth] ${url}`, error.toString(), error.stack, error?.response?.data);
@@ -122,11 +129,11 @@ async function Put(url, filePathsMap, authenticated = true, apiVersion = 1) {
     }
 }
 
-async function Delete(url, authenticated = true, apiVersion = 1) {
+async function Delete(url, authenticated = true, apiVersion = 1, escapeResponse = true) {
     try {
         const response = await (authenticated ? (apiVersion === 1 ? CVRApi : CVRApiV2) : UnauthenticatedCVRApi).delete(url);
         log.debug(`[DELETE] [${response.status}] [${authenticated ? '' : 'Non-'}Auth] ${url}`, response.data);
-        return response.data;
+        return escapeResponse ? utils.EscapeHtml(response.data) : response.data;
     }
     catch (error) {
         log.error(`[DELETE] [Error] [${authenticated ? '' : 'Non-'}Auth] ${url}`, error.toString(), error.stack, error?.response?.data);
@@ -250,7 +257,8 @@ exports.AuthenticateViaPassword = async (email, password) => {
     return await Authenticate(AuthMethod.PASSWORD, email, password);
 };
 async function Authenticate(authType, credentialUser, credentialSecret) {
-    const authentication = (await Post('/users/auth', { AuthType: authType, Username: credentialUser, Password: credentialSecret }, false)).data;
+    // escapeResponse: false — username/accessKey from this response are written verbatim into HTTP headers below.
+    const authentication = (await Post('/users/auth', { AuthType: authType, Username: credentialUser, Password: credentialSecret }, false, 1, false)).data;
     CVRApi = axios.create({
         baseURL: APIBase,
         headers: {

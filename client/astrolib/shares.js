@@ -123,14 +123,13 @@ function createShareCard(user, onRemove, createElement) {
                 </div>
             </div>
             <div class="card-content">
-                <p class="card-name"></p>
+                <p class="card-name">${user.name || 'Unknown User'}</p>
                 <div class="card-detail">
                     <span class="material-symbols-outlined">share</span>Shared
                 </div>
             </div>
         `
     });
-    card.querySelector('.card-name').textContent = decodeHtmlEntities(user.name || 'Unknown User');
 
     // Set up background image
     const thumbnailContainer = card.querySelector('.thumbnail-container');
@@ -365,14 +364,13 @@ function displaySearchResults(userResults, resultsContainer, resultsStatus, onAd
                     <img src="img/ui/placeholder.png" data-hash="${user.imageHash || ''}" />
                 </div>
                 <div class="card-content">
-                    <p class="card-name"></p>
+                    <p class="card-name">${user.name}</p>
                     <div class="card-detail">
                         <span class="material-symbols-outlined">person_add</span>Add Share
                     </div>
                 </div>
             `
         });
-        userCard.querySelector('.card-name').textContent = decodeHtmlEntities(user.name);
         
         // Set up the image hash for loading
         const img = userCard.querySelector('.thumbnail-container img');

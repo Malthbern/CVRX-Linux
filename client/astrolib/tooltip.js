@@ -81,7 +81,7 @@ const showTooltip = (e) => {
         hideTooltipTimeout = null;
     }
 
-    tooltip.textContent = e.target.dataset.tooltip;
+    tooltip.innerHTML = e.target.dataset.tooltip;
     tooltip.style.opacity = '1';
     tooltip.style.visibility = 'visible';
     tooltip.style.transform = 'translateY(0) scale(1)';
@@ -96,7 +96,7 @@ const hideTooltip = () => {
 
     // Clear innerHTML after the transition (150ms, matches CSS transition duration)
     hideTooltipTimeout = setTimeout(() => {
-        tooltip.textContent = '';
+        tooltip.innerHTML = '';
         hideTooltipTimeout = null;
     }, 150);
 };

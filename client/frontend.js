@@ -2132,11 +2132,11 @@ window.API.onActiveInstancesUpdate((_event, activeInstancesData) => {
                 onClick: () => ShowDetailsWrapper(DetailsType.User, member.id),
             });
             userIcon.dataset.hash = member.imageHash;
-            userIcon.dataset.tooltip = decodeHtmlEntities(member.name);
-            
+            userIcon.dataset.tooltip = member.name;
+
             if (member.isBlocked) {
                 userIcon.classList.add('active-instance-node--blocked');
-                userIcon.dataset.tooltip = `${userIcon.dataset.tooltip} (Blocked)`;
+                userIcon.dataset.tooltip = `<span class="tooltip-blocked">${userIcon.dataset.tooltip} <small>(Blocked)</small></span>`;
                 elementsOfBlocked.push(userIcon);
                 continue;
             }
@@ -2144,7 +2144,7 @@ window.API.onActiveInstancesUpdate((_event, activeInstancesData) => {
             // Check if this member is the current logged-in user
             if (currentActiveUser && member.id === currentActiveUser.id) {
                 userIcon.classList.add('icon-is-you');
-                userIcon.dataset.tooltip = `${decodeHtmlEntities(member.name)} (You)`;
+                userIcon.dataset.tooltip = `${member.name} <small style="color: rgba(255,255,255,0.6); font-size: 0.85em;">(You)</small>`;
                 elementsOfCurrentUser.push(userIcon);
                 continue;
             }
