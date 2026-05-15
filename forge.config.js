@@ -58,7 +58,8 @@ module.exports = {
                 options: {
                     icon: 'icon/cvrx-logo.png',
                     categories: ['Network', 'Utility'],
-                    bin: 'CVRX',
+                    // Must match packagerConfig.executableName above.
+                    bin: 'cvrx',
                 },
             },
         },
