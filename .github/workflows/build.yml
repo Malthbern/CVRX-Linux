@@ -1,12 +1,10 @@
 name: Build & Release
 
 # Triggers:
-#   - push to main           : build all 3 OSes, upload artifacts (no release)
-#   - tag push (v*)          : build + create a DRAFT release with binaries attached
-#   - manual (workflow_dispatch): on-demand build, artifacts only
+#   - tag push (v*)             : build + create a DRAFT release with binaries attached
+#   - manual (workflow_dispatch): on-demand build, artifacts only (no release)
 on:
   push:
-    branches: [main]
     tags: ['v*']
   workflow_dispatch:
 
