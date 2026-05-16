@@ -58,15 +58,6 @@ const ActivityUpdatesType = Object.freeze({
     InviteRequests: 'inviteRequests',
 });
 
-const htmlEscapeMap =  Object.freeze({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    '\'': '&#039;',
-});
-
-
 function IsObjectEqualExcept(obj1, obj2, keysToIgnore) {
     return JSON.stringify(obj1, (key, value) => keysToIgnore.includes(key) ? undefined : value) ===
     JSON.stringify(obj2, (key, value) => keysToIgnore.includes(key) ? undefined : value);
@@ -111,28 +102,6 @@ async function LoadGroupImages(groupObject) {
         await LoadImage(groupObject.owner.image, groupObject.owner);
     }
 }
-
-function EscapeStringFromHtml(text) {
-    return text.replace(/[&<>"']/g, (m) => { return htmlEscapeMap[m]; });
-}
-
-function EscapeHtml(obj, firstIteration = true) {
-    if (obj) {
-        // Deep clone to prevent affecting the original objects (we're caching some of those)
-        if (firstIteration) obj = Utils.DeepClone(obj);
-        for (let key in obj) {
-            if(!Object.prototype.hasOwnProperty.call(obj, key)) continue;
-            // Note: Array also show as object
-            if (typeof obj[key] === 'object' && obj[key] !== null) {
-                EscapeHtml(obj[key], false);
-            } else if (Object.prototype.toString.call(obj[key]) === '[object String]') {
-                obj[key] = EscapeStringFromHtml(obj[key]);
-            }
-        }
-    }
-    return obj;
-}
-
 
 class Core {
 
@@ -296,42 +265,46 @@ class Core {
         ipcMain.on('log-error', (_event, msg, data) => logRenderer.error(msg, data));
 
         // Setup handlers for IPC
-        ipcMain.handle('get-user-by-id', async (_event, userId) => EscapeHtml(await this.GetUserById(userId)));
-        ipcMain.handle('get-user-public-avatars', async (_event, userId) => EscapeHtml(await this.GetUserPublicContent(userId, PublicContentType.AVATARS)));
-        ipcMain.handle('get-user-public-worlds', async (_event, userId) => EscapeHtml(await this.GetUserPublicContent(userId, PublicContentType.WORLDS)));
-        ipcMain.handle('get-user-public-props', async (_event, userId) => EscapeHtml(await this.GetUserPublicContent(userId, PublicContentType.PROPS)));
+        // Note: response data is already HTML-escaped at the API source (api_cvr_http.js / api_cvr_ws.js),
+        // so handlers here can return values directly without per-call wrapping.
+        ipcMain.handle('get-user-by-id', async (_event, userId) => await this.GetUserById(userId));
+        ipcMain.handle('get-user-public-avatars', async (_event, userId) => await this.GetUserPublicContent(userId, PublicContentType.AVATARS));
+        ipcMain.handle('get-user-public-worlds', async (_event, userId) => await this.GetUserPublicContent(userId, PublicContentType.WORLDS));
+        ipcMain.handle('get-user-public-props', async (_event, userId) => await this.GetUserPublicContent(userId, PublicContentType.PROPS));
         ipcMain.handle('set-friend-note', async (_event, userId, note) => (await CVRHttp.SetFriendNote(userId, note))?.message);
+        ipcMain.handle('set-my-profile-bio', async (_event, profileBio) => (await CVRHttp.SetMyProfileBio(profileBio))?.message);
+        ipcMain.handle('set-my-profile-pronouns', async (_event, profilePronouns) => (await CVRHttp.SetMyProfilePronouns(profilePronouns))?.message);
 
-        ipcMain.handle('get-world-by-id', async (_event, worldId) => EscapeHtml(await this.GetWorldById(worldId)));
-        ipcMain.handle('get-world-meta-by-id', async (_event, worldId) => EscapeHtml(await CVRHttp.GetWorldMetaById(worldId)));
-        ipcMain.handle('get-world-portal-by-id', async (_event, worldId) => EscapeHtml(await CVRHttp.GetWorldPortalById(worldId)));
-        ipcMain.handle('get-worlds-by-category', async (_event, categoryId, page, sort, direction) => EscapeHtml(await this.GetWorldsByCategory(categoryId, page, sort, direction)));
-        ipcMain.handle('set-world-as-home', async (_event, worldId) => EscapeHtml(await CVRHttp.SetWorldAsHome(worldId)));
-        ipcMain.handle('get-instance-by-id', async (_event, instanceId) => EscapeHtml(await this.GetInstanceById(instanceId)));
-        ipcMain.handle('get-instance-portal-by-id', async (_event, instanceId) => EscapeHtml(await CVRHttp.GetInstancePortalById(instanceId)));
-        ipcMain.handle('join-instance', async (_event, instanceId) => EscapeHtml(await CVRHttp.JoinInstance(instanceId)));
-        ipcMain.handle('get-avatar-by-id', async (_event, avatarId) => EscapeHtml(await this.GetAvatarById(avatarId)));
-        ipcMain.handle('get-prop-by-id', async (_event, propId) => EscapeHtml(await this.GetPropById(propId)));
-        ipcMain.handle('get-props', async (_event) => EscapeHtml(await CVRHttp.GetProps()));
-        ipcMain.handle('search', async (_event, term) => EscapeHtml(await this.Search(term)));
+        ipcMain.handle('get-world-by-id', async (_event, worldId) => await this.GetWorldById(worldId));
+        ipcMain.handle('get-world-meta-by-id', async (_event, worldId) => await CVRHttp.GetWorldMetaById(worldId));
+        ipcMain.handle('get-world-portal-by-id', async (_event, worldId) => await CVRHttp.GetWorldPortalById(worldId));
+        ipcMain.handle('get-worlds-by-category', async (_event, categoryId, page, sort, direction) => await this.GetWorldsByCategory(categoryId, page, sort, direction));
+        ipcMain.handle('set-world-as-home', async (_event, worldId) => await CVRHttp.SetWorldAsHome(worldId));
+        ipcMain.handle('get-instance-by-id', async (_event, instanceId) => await this.GetInstanceById(instanceId));
+        ipcMain.handle('get-instance-portal-by-id', async (_event, instanceId) => await CVRHttp.GetInstancePortalById(instanceId));
+        ipcMain.handle('join-instance', async (_event, instanceId) => await CVRHttp.JoinInstance(instanceId));
+        ipcMain.handle('get-avatar-by-id', async (_event, avatarId) => await this.GetAvatarById(avatarId));
+        ipcMain.handle('get-prop-by-id', async (_event, propId) => await this.GetPropById(propId));
+        ipcMain.handle('get-props', async (_event) => await CVRHttp.GetProps());
+        ipcMain.handle('search', async (_event, term) => await this.Search(term));
 
         // Avatar
-        ipcMain.handle('set-current-avatar', async (_event, avatarId) => EscapeHtml(await CVRHttp.SetCurrentAvatar(avatarId)));
+        ipcMain.handle('set-current-avatar', async (_event, avatarId) => await CVRHttp.SetCurrentAvatar(avatarId));
 
         // Get Random Content
-        ipcMain.handle('get-random-avatars', async (_event, count) => EscapeHtml(await this.GetRandomContent(PublicContentType.AVATARS, count)));
-        ipcMain.handle('get-random-worlds', async (_event, count) => EscapeHtml(await this.GetRandomContent(PublicContentType.WORLDS, count)));
-        ipcMain.handle('get-random-props', async (_event, count) => EscapeHtml(await this.GetRandomContent(PublicContentType.PROPS, count)));
+        ipcMain.handle('get-random-avatars', async (_event, count) => await this.GetRandomContent(PublicContentType.AVATARS, count));
+        ipcMain.handle('get-random-worlds', async (_event, count) => await this.GetRandomContent(PublicContentType.WORLDS, count));
+        ipcMain.handle('get-random-props', async (_event, count) => await this.GetRandomContent(PublicContentType.PROPS, count));
 
         // Content Shares (Get)
-        ipcMain.handle('get-avatar-shares', async (_event, avatarId) => EscapeHtml(await this.GetContentShares(PublicContentType.AVATARS, avatarId)));
-        ipcMain.handle('get-prop-shares', async (_event, propId) => EscapeHtml(await this.GetContentShares(PublicContentType.PROPS, propId)));
+        ipcMain.handle('get-avatar-shares', async (_event, avatarId) => await this.GetContentShares(PublicContentType.AVATARS, avatarId));
+        ipcMain.handle('get-prop-shares', async (_event, propId) => await this.GetContentShares(PublicContentType.PROPS, propId));
         // Content Shares (Add)
-        ipcMain.handle('add-avatar-share', async (_event, avatarId, userId) => EscapeHtml(await this.AddContentShares(PublicContentType.AVATARS, avatarId, userId)));
-        ipcMain.handle('add-prop-share', async (_event, propId, userId) => EscapeHtml(await this.AddContentShares(PublicContentType.PROPS, propId, userId)));
+        ipcMain.handle('add-avatar-share', async (_event, avatarId, userId) => await this.AddContentShares(PublicContentType.AVATARS, avatarId, userId));
+        ipcMain.handle('add-prop-share', async (_event, propId, userId) => await this.AddContentShares(PublicContentType.PROPS, propId, userId));
         // Content Shares (Remove)
-        ipcMain.handle('remove-avatar-share', async (_event, avatarId, userId) => EscapeHtml(await this.RemoveContentShares(PublicContentType.AVATARS, avatarId, userId)));
-        ipcMain.handle('remove-prop-share', async (_event, propId, userId) => EscapeHtml(await this.RemoveContentShares(PublicContentType.PROPS, propId, userId)));
+        ipcMain.handle('remove-avatar-share', async (_event, avatarId, userId) => await this.RemoveContentShares(PublicContentType.AVATARS, avatarId, userId));
+        ipcMain.handle('remove-prop-share', async (_event, propId, userId) => await this.RemoveContentShares(PublicContentType.PROPS, propId, userId));
 
         // Friendship
         ipcMain.handle('friend-request-send', (_event, userId) => CVRWebsocket.SendFriendRequest(userId));
@@ -385,11 +358,11 @@ class Core {
         });
 
         // Account
-        ipcMain.handle('get-mature-content-config', (_event) => EscapeHtml(this.matureContentConfig));
+        ipcMain.handle('get-mature-content-config', (_event) => this.matureContentConfig);
         ipcMain.handle('set-mature-content-visibility', async (_event, enabled) => await this.SetMatureContentVisibility(enabled));
 
         // Categories
-        ipcMain.handle('get-categories', (_event) => EscapeHtml(this.categories));
+        ipcMain.handle('get-categories', (_event) => this.categories);
         ipcMain.on('update-categories', (_event) => this.UpdateCategories());
         // Categories - Assign
         ipcMain.handle('assign-categories-friend', async (_event, userId, categoryIds) => await this.AssignCategory(CategoryType.FRIENDS, userId, categoryIds));
@@ -415,48 +388,48 @@ class Core {
 
         //#region Groups
 
-        ipcMain.handle('get-my-groups', async (_event) => EscapeHtml(await this.GetMyGroups()));
-        ipcMain.handle('get-user-groups', async (_event, userId) => EscapeHtml(await this.GetUserGroups(userId)));
-        ipcMain.handle('get-group-detail', async (_event, groupId) => EscapeHtml(await this.GetGroupDetails(groupId)));
-        ipcMain.handle('get-group-members', async (_event, groupId, page, sortOrder, sortAscending) => EscapeHtml(await this.GetGroupMembers(groupId, page, sortOrder, sortAscending)));
+        ipcMain.handle('get-my-groups', async (_event) => await this.GetMyGroups());
+        ipcMain.handle('get-user-groups', async (_event, userId) => await this.GetUserGroups(userId));
+        ipcMain.handle('get-group-detail', async (_event, groupId) => await this.GetGroupDetails(groupId));
+        ipcMain.handle('get-group-members', async (_event, groupId, page, sortOrder, sortAscending) => await this.GetGroupMembers(groupId, page, sortOrder, sortAscending));
 
         //#region Management
-        ipcMain.handle('create-group', async (_event, tag, name) => EscapeHtml(await CVRHttp.CreateGroup(tag, name)));
-        ipcMain.handle('delete-group', async (_event, groupId) => EscapeHtml(await CVRHttp.DeleteGroup(groupId)));
-        ipcMain.handle('join-group', async (_event, groupId) => EscapeHtml(await CVRHttp.JoinGroup(groupId)));
-        ipcMain.handle('leave-group', async (_event, groupId) => EscapeHtml(await CVRHttp.LeaveGroup(groupId)));
-        ipcMain.handle('set-featured-group', async (_event, groupId) => EscapeHtml(await CVRHttp.SetFeaturedGroup(groupId)));
+        ipcMain.handle('create-group', async (_event, tag, name) => await CVRHttp.CreateGroup(tag, name));
+        ipcMain.handle('delete-group', async (_event, groupId) => await CVRHttp.DeleteGroup(groupId));
+        ipcMain.handle('join-group', async (_event, groupId) => await CVRHttp.JoinGroup(groupId));
+        ipcMain.handle('leave-group', async (_event, groupId) => await CVRHttp.LeaveGroup(groupId));
+        ipcMain.handle('set-featured-group', async (_event, groupId) => await CVRHttp.SetFeaturedGroup(groupId));
         //#endregion Management
 
         //#region Management Details
-        ipcMain.handle('update-group-name', async (_event, groupId, name) => EscapeHtml(await CVRHttp.UpdateGroupName(groupId, name)));
-        ipcMain.handle('update-group-description', async (_event, groupId, description) => EscapeHtml(await CVRHttp.UpdateGroupDescription(groupId, description)));
-        ipcMain.handle('update-group-image', async (_event, groupId, imageFilePath) => EscapeHtml(await CVRHttp.UpdateGroupImage(groupId, imageFilePath)));
+        ipcMain.handle('update-group-name', async (_event, groupId, name) => await CVRHttp.UpdateGroupName(groupId, name));
+        ipcMain.handle('update-group-description', async (_event, groupId, description) => await CVRHttp.UpdateGroupDescription(groupId, description));
+        ipcMain.handle('update-group-image', async (_event, groupId, imageFilePath) => await CVRHttp.UpdateGroupImage(groupId, imageFilePath));
         ipcMain.handle('update-group-settings', async (_event, groupId, listed, memberPublicity, eventPublicity, privacyJoin) =>
-            EscapeHtml(await CVRHttp.UpdateGroupSettings(groupId, listed, memberPublicity, eventPublicity, privacyJoin)));
+            await CVRHttp.UpdateGroupSettings(groupId, listed, memberPublicity, eventPublicity, privacyJoin));
         //#endregion Management Details
 
         //#region Management Members
-        ipcMain.handle('invite-user-to-group', async (_event, groupId, userId) => EscapeHtml(await CVRHttp.InviteUserToGroup(groupId, userId)));
-        ipcMain.handle('kick-member-from-group', async (_event, groupId, userId) => EscapeHtml(await CVRHttp.KickMemberFromGroup(groupId, userId)));
-        ipcMain.handle('assign-group-role-to-member', async (_event, groupId, userId, role) => EscapeHtml(await CVRHttp.AssignGroupRoleToMember(groupId, userId, role)));
-        ipcMain.handle('transfer-group-ownership', async (_event, groupId, userId) => EscapeHtml(await CVRHttp.TransferGroupOwnership(groupId, userId)));
+        ipcMain.handle('invite-user-to-group', async (_event, groupId, userId) => await CVRHttp.InviteUserToGroup(groupId, userId));
+        ipcMain.handle('kick-member-from-group', async (_event, groupId, userId) => await CVRHttp.KickMemberFromGroup(groupId, userId));
+        ipcMain.handle('assign-group-role-to-member', async (_event, groupId, userId, role) => await CVRHttp.AssignGroupRoleToMember(groupId, userId, role));
+        ipcMain.handle('transfer-group-ownership', async (_event, groupId, userId) => await CVRHttp.TransferGroupOwnership(groupId, userId));
         //#endregion Management Members
 
         //#region Invites & Invite Requests
-        ipcMain.handle('get-group-invites', async (_event) => EscapeHtml(await CVRHttp.GetGroupInvites()));
-        ipcMain.handle('decline-group-invite', async (_event, groupId) => EscapeHtml(await CVRHttp.DeclineGroupInvite(groupId)));
-        ipcMain.handle('request-to-join-group', async (_event, groupId) => EscapeHtml(await CVRHttp.RequestJoinGroup(groupId)));
-        ipcMain.handle('decline-group-invite-request', async (_event, groupId, userId) => EscapeHtml(await CVRHttp.DeclineGroupInviteRequest(groupId, userId)));
-        ipcMain.handle('get-group-invite-requests', async (_event, groupId) => EscapeHtml(await CVRHttp.GetGroupInviteRequests(groupId)));
+        ipcMain.handle('get-group-invites', async (_event) => await CVRHttp.GetGroupInvites());
+        ipcMain.handle('decline-group-invite', async (_event, groupId) => await CVRHttp.DeclineGroupInvite(groupId));
+        ipcMain.handle('request-to-join-group', async (_event, groupId) => await CVRHttp.RequestJoinGroup(groupId));
+        ipcMain.handle('decline-group-invite-request', async (_event, groupId, userId) => await CVRHttp.DeclineGroupInviteRequest(groupId, userId));
+        ipcMain.handle('get-group-invite-requests', async (_event, groupId) => await CVRHttp.GetGroupInviteRequests(groupId));
         //#endregion Invites & Invite Requests
 
         //#endregion Groups
 
 
         //#region Badges
-        ipcMain.handle('get-user-badges', async (_event, userId) => EscapeHtml(await CVRHttp.GetUserBadges(userId)));
-        ipcMain.handle('set-featured-badge', async (_event, badgeId) => EscapeHtml(await CVRHttp.SetFeaturedBadge(badgeId)));
+        ipcMain.handle('get-user-badges', async (_event, userId) => await CVRHttp.GetUserBadges(userId));
+        ipcMain.handle('set-featured-badge', async (_event, badgeId) => await CVRHttp.SetFeaturedBadge(badgeId));
         //#endregion Badges
 
 
@@ -636,9 +609,6 @@ class Core {
     }
 
     SendToRenderer(channel, ...args) {
-        for (let i = 0; i < args.length; i++) {
-            EscapeHtml(args[i]);
-        }
         this.mainWindow.webContents.send(channel, ...args);
     }
 
@@ -1261,12 +1231,12 @@ class Core {
     async UpdateMatureContentConfig() {
         this.remoteConfig = await CVRHttp.GetRemoteConfig();
         this.matureContentConfig = CVRWebsocket.MapMatureContentConfig(this.remoteConfig.matureContent);
-        this.SendToRenderer('mature-content-update', EscapeHtml(this.matureContentConfig));
+        this.SendToRenderer('mature-content-update', this.matureContentConfig);
     }
 
     async UpdateMatureContentConfigWs(matureContentInfo) {
         this.matureContentConfig = matureContentInfo;
-        this.SendToRenderer('mature-content-config-update', EscapeHtml(matureContentInfo));
+        this.SendToRenderer('mature-content-config-update', matureContentInfo);
     }
 
     async SetMatureContentVisibility(enabled) {

@@ -9,8 +9,9 @@ import {
     generateInstanceJoinLink,
     openDeepLink 
 } from './astrolib/deeplinks.js';
-import { 
+import {
     DetailsType,
+    decodeHtmlEntities,
     getCurrentEntityType,
     getEntityClassPrefix,
     updateDetailsWindowClasses,
@@ -399,22 +400,26 @@ function promptUpdate(updateInfo) {
     
     const promptButtons = createElement('div', { className: 'prompt-buttons' });
 
+    // On Windows we can download + auto-install. On other platforms the same
+    // button just opens the release page in the user's browser — they download
+    // and install whichever package format they want (deb/rpm/AppImage/dmg).
     const downloadButton = createElement('button', {
         className: 'prompt-btn-confirm update-primary-action',
-        textContent: 'Download and Install',
+        textContent: updateInfo.autoInstall ? 'Download and Install' : 'View Release on GitHub',
         onClick: async () => {
             try {
-                // Close the modal immediately when user clicks download
                 newPrompt.remove();
                 promptShade.style.display = 'none';
-                
-                // Show toast notification to inform user about the download process
-                pushToast('Downloading update... The app will restart automatically once installation begins.', 'info');
-                
-                // Start the download (progress modal will appear automatically)
+
+                if (updateInfo.autoInstall) {
+                    pushToast('Downloading update... The app will restart automatically once installation begins.', 'info');
+                } else {
+                    pushToast('Opening release page in your browser...', 'info');
+                }
+
                 await window.API.updateAction('download', updateInfo);
             } catch (error) {
-                pushToast('Failed to download update', 'error');
+                pushToast(updateInfo.autoInstall ? 'Failed to download update' : 'Failed to open release page', 'error');
             }
         },
     });
@@ -931,6 +936,101 @@ async function loadTabContent(tab, entityId) {
     if (tab === 'categories') {
         // Load categories manager for My Profile
         loadCategoriesManager();
+        return;
+    }
+
+    if (tab === 'bio') {
+        const bioContainer = document.querySelector('#bio-tab .bio-container');
+        if (!bioContainer) return;
+
+        bioContainer.innerHTML = '<div class="loading-indicator">Loading...</div>';
+
+        try {
+            const userInfo = await window.API.getUserById(entityId);
+            const bioContent = userInfo.profileBio || '';
+            const isMyProfile = currentActiveUser && entityId === currentActiveUser.id;
+
+            const renderDisplay = () => {
+                if (isMyProfile) {
+                    bioContainer.innerHTML = `
+                        <div class="bio-content">
+                            ${bioContent ?
+                                `<p class="bio-text">${bioContent}</p>` :
+                                `<p class="bio-placeholder">No bio added</p>`
+                            }
+                        </div>
+                        <button class="edit-bio-button">
+                            <span class="material-symbols-outlined">edit</span>
+                            ${bioContent ? 'Edit Bio' : 'Add Bio'}
+                        </button>
+                    `;
+
+                    const editButton = bioContainer.querySelector('.edit-bio-button');
+                    editButton.onclick = () => {
+                        const editForm = createElement('div', {
+                            className: 'bio-edit-form',
+                            innerHTML: `
+                                <textarea class="bio-textarea" maxlength="512" placeholder="Tell others about yourself...">${bioContent}</textarea>
+                                <div class="bio-edit-buttons">
+                                    <button class="save-bio-button">
+                                        <span class="material-symbols-outlined">save</span>
+                                        Save
+                                    </button>
+                                    <button class="cancel-bio-button">
+                                        <span class="material-symbols-outlined">close</span>
+                                        Cancel
+                                    </button>
+                                </div>
+                            `
+                        });
+
+                        bioContainer.innerHTML = '';
+                        bioContainer.appendChild(editForm);
+
+                        const textarea = editForm.querySelector('.bio-textarea');
+                        textarea.focus();
+
+                        const saveButton = editForm.querySelector('.save-bio-button');
+                        const cancelButton = editForm.querySelector('.cancel-bio-button');
+
+                        saveButton.onclick = async () => {
+                            const newBio = textarea.value.trim();
+                            saveButton.disabled = true;
+                            cancelButton.disabled = true;
+                            try {
+                                await window.API.setMyProfileBio(newBio);
+                                loadTabContent('bio', entityId);
+                                pushToast('Bio saved', 'confirm');
+                            } catch (error) {
+                                log('Failed to save bio:');
+                                log(error);
+                                pushToast('Failed to save bio', 'error');
+                                saveButton.disabled = false;
+                                cancelButton.disabled = false;
+                            }
+                        };
+
+                        cancelButton.onclick = () => {
+                            loadTabContent('bio', entityId);
+                        };
+                    };
+                } else {
+                    bioContainer.innerHTML = `
+                        <div class="bio-content">
+                            ${bioContent ?
+                                `<p class="bio-text">${bioContent}</p>` :
+                                `<p class="bio-placeholder">This user hasn't written a bio yet.</p>`
+                            }
+                        </div>
+                    `;
+                }
+            };
+
+            renderDisplay();
+        } catch (error) {
+            bioContainer.innerHTML = `<div class="error-message">Error loading bio</div>`;
+            log('Error loading bio:', error);
+        }
         return;
     }
 
@@ -2037,14 +2137,14 @@ window.API.onActiveInstancesUpdate((_event, activeInstancesData) => {
             });
             userIcon.dataset.hash = member.imageHash;
             userIcon.dataset.tooltip = member.name;
-            
+
             if (member.isBlocked) {
                 userIcon.classList.add('active-instance-node--blocked');
                 userIcon.dataset.tooltip = `<span class="tooltip-blocked">${userIcon.dataset.tooltip} <small>(Blocked)</small></span>`;
                 elementsOfBlocked.push(userIcon);
                 continue;
             }
-            
+
             // Check if this member is the current logged-in user
             if (currentActiveUser && member.id === currentActiveUser.id) {
                 userIcon.classList.add('icon-is-you');
@@ -4085,7 +4185,7 @@ function showManageFriendNotificationsModal(friendsWithNotifications) {
             
             const friendName = createElement('div', {
                 className: 'manage-notifications-friend-name',
-                textContent: friend.name
+                textContent: decodeHtmlEntities(friend.name)
             });
             
             const friendStatus = createElement('div', {

@@ -3,6 +3,12 @@ const { version } = require('./package.json');
 module.exports = {
     packagerConfig: {
         icon: 'icon/cvrx-logo',
+        // Force the inner binary filename to match package.json `name` (lowercase).
+        // maker-deb / maker-rpm derive the expected binary filename from `name`
+        // and fail if the packager produced one cased after `productName` instead.
+        // Affects only the binary filename inside the package — the Windows
+        // installer, .app bundle, and shortcut names still use productName.
+        executableName: 'cvrx',
     },
     rebuildConfig: {},
     makers: [
@@ -40,6 +46,20 @@ module.exports = {
                 options: {
                     icon: 'icon/cvrx-logo.png',
                     homepage: 'https://github.com/AstroDogeDX/CVRX',
+                },
+            },
+        },
+        {
+            // Community-maintained AppImage maker — covers distros that don't
+            // use deb/rpm (Arch, NixOS, Steam Deck/SteamOS, etc.) plus anyone
+            // who prefers a portable single-file binary.
+            name: '@reforged/maker-appimage',
+            config: {
+                options: {
+                    icon: 'icon/cvrx-logo.png',
+                    categories: ['Network', 'Utility'],
+                    // Must match packagerConfig.executableName above.
+                    bin: 'cvrx',
                 },
             },
         },

@@ -47,6 +47,41 @@ exports.DeepClone = (obj) => {
     return JSON.parse(JSON.stringify(obj));
 };
 
+const htmlEscapeMap = Object.freeze({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    '\'': '&#039;',
+});
+
+// Escape the five HTML-significant characters in a string so it renders as
+// literal text when injected into innerHTML. Anything user-controlled coming
+// off the wire goes through this so it can't smuggle markup into the renderer.
+const EscapeStringFromHtml = (text) => text.replace(/[&<>"']/g, (m) => htmlEscapeMap[m]);
+exports.EscapeStringFromHtml = EscapeStringFromHtml;
+
+// Recursively escape every string field in an object/array. Returns a new
+// (deep-cloned) value; the input is left untouched. Pass a primitive string
+// directly and you get the escaped string back.
+exports.EscapeHtml = function EscapeHtml(obj, firstIteration = true) {
+    if (typeof obj === 'string') return EscapeStringFromHtml(obj);
+    if (obj) {
+        // Deep clone on entry to prevent mutating the caller's object (some are cached).
+        if (firstIteration) obj = exports.DeepClone(obj);
+        for (let key in obj) {
+            if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+            // Note: Array also shows as object
+            if (typeof obj[key] === 'object' && obj[key] !== null) {
+                exports.EscapeHtml(obj[key], false);
+            } else if (Object.prototype.toString.call(obj[key]) === '[object String]') {
+                obj[key] = EscapeStringFromHtml(obj[key]);
+            }
+        }
+    }
+    return obj;
+};
+
 // Renames properties of an entity based on a given mapping.
 // entity - The object to rename properties for.
 // mapping - An object where keys are api property names and values are our property names.

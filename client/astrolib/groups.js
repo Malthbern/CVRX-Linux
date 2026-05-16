@@ -182,7 +182,7 @@ function createMemberNode(member, ownerId, myStatus, groupId) {
             e.stopPropagation();
             try {
                 await window.API.kickMemberFromGroup(groupId, member.id);
-                pushToast(`Kicked ${decodeHtmlEntities(member.name)}`, 'success');
+                pushToast(`Kicked ${member.name}`, 'success');
                 memberNode.remove();
             } catch (_err) {
                 pushToast('Failed to kick member', 'error');
@@ -313,7 +313,7 @@ export async function showGroupDetails(groupId) {
 
         if (group.owner) {
             const ownerRow = createElement('div', { className: 'group-sidebar-row' });
-            ownerRow.dataset.tooltip = `Owner: ${decodeHtmlEntities(group.owner.name)}`;
+            ownerRow.dataset.tooltip = `Owner: ${group.owner.name}`;
             const ownerImg = createElement('img', {
                 className: 'group-sidebar-row-image',
                 src: getCachedImage(group.owner.imageHash),
@@ -338,7 +338,7 @@ export async function showGroupDetails(groupId) {
 
         if (group.tag) {
             const tagRow = createElement('div', { className: 'group-sidebar-row' });
-            tagRow.innerHTML = `<span class="material-symbols-outlined">sell</span><span>[${decodeHtmlEntities(group.tag)}]</span>`;
+            tagRow.innerHTML = `<span class="material-symbols-outlined">sell</span><span>[${group.tag}]</span>`;
             infoRows.appendChild(tagRow);
         }
 
@@ -640,11 +640,11 @@ function showInvitePicker(parentPane, groupId) {
                 className: 'group-invite-send-btn',
                 innerHTML: '<span class="material-symbols-outlined">send</span>',
             });
-            invBtn.dataset.tooltip = `Invite ${decodeHtmlEntities(friend.name)}`;
+            invBtn.dataset.tooltip = `Invite ${friend.name}`;
             invBtn.addEventListener('click', async () => {
                 try {
                     await window.API.inviteUserToGroup(groupId, friend.id);
-                    pushToast(`Invited ${decodeHtmlEntities(friend.name)}`, 'success');
+                    pushToast(`Invited ${friend.name}`, 'success');
                     invBtn.disabled = true;
                     invBtn.innerHTML = '<span class="material-symbols-outlined">check</span>';
                 } catch (_err) {
@@ -929,7 +929,7 @@ export async function handleGroupsRefresh(groups) {
                     <img src="${imgSrc}" data-hash="${group.imageHash}" class="hidden"/>
                 </div>
                 <div class="card-content">
-                    <p class="card-name">${decodeHtmlEntities(group.name)}</p>
+                    <p class="card-name">${group.name}</p>
                     <div class="card-detail">
                         <span class="material-symbols-outlined">group</span>${group.memberCount || 0} members
                     </div>

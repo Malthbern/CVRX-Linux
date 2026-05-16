@@ -123,7 +123,7 @@ function createShareCard(user, onRemove, createElement) {
                 </div>
             </div>
             <div class="card-content">
-                <p class="card-name">${decodeHtmlEntities(user.name || 'Unknown User')}</p>
+                <p class="card-name">${user.name || 'Unknown User'}</p>
                 <div class="card-detail">
                     <span class="material-symbols-outlined">share</span>Shared
                 </div>
@@ -364,7 +364,7 @@ function displaySearchResults(userResults, resultsContainer, resultsStatus, onAd
                     <img src="img/ui/placeholder.png" data-hash="${user.imageHash || ''}" />
                 </div>
                 <div class="card-content">
-                    <p class="card-name">${decodeHtmlEntities(user.name)}</p>
+                    <p class="card-name">${user.name}</p>
                     <div class="card-detail">
                         <span class="material-symbols-outlined">person_add</span>Add Share
                     </div>

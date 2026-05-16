@@ -330,41 +330,49 @@ function addMyProfileTabs(entityType, entityInfo, entityId, currentActiveUser, l
     
     let tabs = [];
     let tabPanes = [];
-    
-    // Only Categories tab for My Profile
-    const categoriesTab = createTabButton('categories', 'folder', 'Categories', classPrefix, true);
+
+    // Categories tab (placeholder)
+    const categoriesTab = createTabButton('categories', 'folder', 'Categories', classPrefix);
     tabs.push(categoriesTab);
     tabsLeft.append(categoriesTab);
-    
-    // Create corresponding tab pane
-    const categoriesPane = createTabPane('categories', classPrefix, '<div class="categories-container"><div class="no-items-message">Categories management coming soon!</div></div>', true);
+
+    // Bio tab (default) on the right side
+    const bioTab = createTabButton('bio', 'description', 'Bio', classPrefix, true);
+    tabs.push(bioTab);
+    tabsRight.append(bioTab);
+
+    // Create corresponding tab panes
+    const categoriesPane = createTabPane('categories', classPrefix, '<div class="categories-container"><div class="no-items-message">Categories management coming soon!</div></div>');
     tabPanes.push(categoriesPane);
-    
-    // Add tab pane to the content area
+
+    const bioPane = createTabPane('bio', classPrefix, '<div class="bio-container"></div>', true);
+    tabPanes.push(bioPane);
+
+    // Add tab panes to the content area
     tabContent.append(...tabPanes);
-    
-    // Set up click handler for the tab
+
+    // Set up click handlers for all tabs
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
             // Remove active class from all tabs and panes
             document.querySelectorAll(`.${classPrefix}-tab`).forEach(t => t.classList.remove('active'));
             document.querySelectorAll(`.${classPrefix}-tab-pane`).forEach(p => p.classList.remove('active'));
-            
+
             // Add active class to clicked tab and corresponding pane
             tab.classList.add('active');
             const pane = document.getElementById(`${tab.dataset.tab}-tab`);
             if (pane) {
                 pane.classList.add('active');
             }
-            
+
             // Load content for the selected tab
             loadTabContentCallback(tab.dataset.tab, entityId);
         });
     });
-    
-    // Load initial tab content
-    loadTabContentCallback('categories', entityId);
-    
+
+    // Load initial tab content (Bio is the default)
+    loadTabContentCallback('bio', entityId);
+
     // Apply tooltips to newly created elements
     applyTooltips();
 }
@@ -383,45 +391,44 @@ function addEntityTabs(entityType, entityInfo, entityId, currentActiveUser, load
     switch (entityType) {
         case DetailsType.User:
             // Left side tabs for User Details
-            const avatarsTab = createTabButton('avatars', 'emoji_people', 'Avatars', classPrefix, true);
+            const avatarsTab = createTabButton('avatars', 'emoji_people', 'Avatars', classPrefix);
             const propsTab = createTabButton('props', 'view_in_ar', 'Props', classPrefix);
             const worldsTab = createTabButton('worlds', 'public', 'Worlds', classPrefix);
             const groupsTab = createTabButton('groups', 'workspaces', 'Groups', classPrefix);
 
             tabs.push(avatarsTab, propsTab, worldsTab, groupsTab);
             tabsLeft.append(avatarsTab, propsTab, worldsTab, groupsTab);
-            
+
             // Right side tabs for User Details
             if (entityInfo.isFriend) {
                 const notesTab = createTabButton('notes', 'note', 'Notes', classPrefix);
                 tabs.push(notesTab);
                 tabsRight.append(notesTab);
             }
-            
-            // Stats tab - disabled placeholder for future functionality
-            const statsTab = createTabButton('stats', 'bar_chart', 'Stats', classPrefix);
-            statsTab.classList.add('disabled');
-            tabs.push(statsTab);
-            tabsRight.append(statsTab);
-            
+
+            // Bio tab - default tab for user details
+            const bioTab = createTabButton('bio', 'description', 'Bio', classPrefix, true);
+            tabs.push(bioTab);
+            tabsRight.append(bioTab);
+
             // Create corresponding tab panes
-            const avatarsPane = createTabPane('avatars', classPrefix, '<div class="' + classPrefix + '-grid"></div>', true);
+            const avatarsPane = createTabPane('avatars', classPrefix, '<div class="' + classPrefix + '-grid"></div>');
             const propsPane = createTabPane('props', classPrefix, '<div class="' + classPrefix + '-grid"></div>');
             const worldsPane = createTabPane('worlds', classPrefix, '<div class="' + classPrefix + '-grid"></div>');
             const groupsPane = createTabPane('groups', classPrefix, '<div class="' + classPrefix + '-grid"></div>');
 
             tabPanes.push(avatarsPane, propsPane, worldsPane, groupsPane);
-            
+
             if (entityInfo.isFriend) {
                 const notesPane = createTabPane('notes', classPrefix, '<div class="notes-container"></div>');
                 tabPanes.push(notesPane);
             }
-            
-            // Stats tab pane
-            const statsPane = createTabPane('stats', classPrefix, '<div class="' + classPrefix + '-grid"><div class="no-items-message">Stats feature coming soon!</div></div>');
-            tabPanes.push(statsPane);
-            
-            firstTabId = 'avatars';
+
+            // Bio tab pane
+            const bioPane = createTabPane('bio', classPrefix, '<div class="bio-container"></div>', true);
+            tabPanes.push(bioPane);
+
+            firstTabId = 'bio';
             break;
             
         case DetailsType.Avatar: {
@@ -557,17 +564,112 @@ function addEntityTabs(entityType, entityInfo, entityId, currentActiveUser, load
     applyTooltips();
 }
 
+// Render the pronouns row (display mode) into a container, optionally with an edit affordance for self.
+function renderPronounsDisplay(container, currentValue, isMyProfile, onEdit) {
+    container.innerHTML = '';
+    container.classList.remove('user-details-pronouns-editing');
+
+    const text = document.createElement('span');
+    text.className = 'user-details-pronouns-text';
+    if (currentValue) {
+        text.textContent = currentValue;
+    } else {
+        text.textContent = 'Add pronouns';
+        text.classList.add('user-details-pronouns-placeholder');
+    }
+    container.appendChild(text);
+
+    if (isMyProfile) {
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined user-details-pronouns-edit-icon';
+        icon.textContent = 'edit';
+        container.appendChild(icon);
+
+        container.title = 'Edit pronouns';
+        container.onclick = () => onEdit(currentValue);
+    }
+}
+
+// Swap the pronouns row into edit mode with an input and a single done button.
+// Done commits if the value changed, otherwise it just dismisses the editor.
+function enterPronounsEditMode(container, currentValue, onSaved) {
+    container.innerHTML = '';
+    container.classList.add('user-details-pronouns-editing');
+    container.onclick = null;
+    container.removeAttribute('title');
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'user-details-pronouns-input';
+    input.value = currentValue;
+    input.maxLength = 32;
+    input.placeholder = 'e.g. she/her';
+
+    const doneBtn = document.createElement('button');
+    doneBtn.className = 'user-details-pronouns-done';
+    doneBtn.title = 'Done';
+    doneBtn.innerHTML = '<span class="material-symbols-outlined">check</span>';
+
+    container.append(input, doneBtn);
+
+    input.focus();
+    input.select();
+
+    const finish = (value) => {
+        // Defer the re-render so the click that triggered this finishes bubbling
+        // first — otherwise it lands on the freshly-restored container onclick
+        // and re-opens the editor.
+        setTimeout(() => onSaved(value), 0);
+    };
+
+    const doDone = async () => {
+        const newValue = input.value.trim();
+        if (newValue === currentValue) {
+            finish(currentValue);
+            return;
+        }
+        doneBtn.disabled = true;
+        input.disabled = true;
+        try {
+            await window.API.setMyProfilePronouns(newValue);
+            pushToast('Pronouns updated', 'confirm');
+            finish(newValue);
+        } catch (error) {
+            log('Failed to update pronouns:');
+            log(error);
+            pushToast('Failed to update pronouns', 'error');
+            doneBtn.disabled = false;
+            input.disabled = false;
+            input.focus();
+        }
+    };
+
+    doneBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        doDone();
+    });
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            doDone();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            finish(currentValue);
+        }
+    });
+}
+
 // Create user-specific header structure using universal details-segment system
-function createUserDetailsHeader(entityInfo, ShowDetailsCallback, entityId) {
+function createUserDetailsHeader(entityInfo, ShowDetailsCallback, entityId, isMyProfile = false) {
     const detailsHeader = document.querySelector('.details-header');
-    
+
     // Clear existing content
     detailsHeader.innerHTML = '';
-    
+
     // Create main container
     const headerContent = document.createElement('div');
     headerContent.className = 'details-header-content user-details-header-layout';
-    
+
     // Create main info section with user image and name
     const mainInfo = document.createElement('div');
     mainInfo.className = 'details-main-info';
@@ -614,7 +716,24 @@ function createUserDetailsHeader(entityInfo, ShowDetailsCallback, entityId) {
     // Add thumbnail and name to main info
     mainInfo.appendChild(thumbnailContainer);
     mainInfo.appendChild(entityName);
-    
+
+    // Pronouns row (shown for self always; for others only when set)
+    const initialPronouns = decodeHtmlEntities(entityInfo.profilePronouns) || '';
+    if (initialPronouns || isMyProfile) {
+        const pronounsContainer = document.createElement('div');
+        pronounsContainer.className = 'user-details-pronouns';
+        if (isMyProfile) pronounsContainer.classList.add('user-details-pronouns-editable');
+
+        const handleEdit = (currentValue) => {
+            enterPronounsEditMode(pronounsContainer, currentValue, (savedValue) => {
+                renderPronounsDisplay(pronounsContainer, savedValue, isMyProfile, handleEdit);
+            });
+        };
+
+        renderPronounsDisplay(pronounsContainer, initialPronouns, isMyProfile, handleEdit);
+        mainInfo.appendChild(pronounsContainer);
+    }
+
     // Create segments container
     const segmentsContainer = document.createElement('div');
     segmentsContainer.className = 'details-segments-container user-details-segments';
@@ -843,7 +962,7 @@ async function ShowDetails(entityType, entityId, dependencies) {
             detailsContent.style.display = 'none';
             
             // Create the custom user header structure
-            const headerElements = createUserDetailsHeader(entityInfo, showDetailsWithDependencies, entityId);
+            const headerElements = createUserDetailsHeader(entityInfo, showDetailsWithDependencies, entityId, isMyProfile);
 
             // Show tabs and content for user details
             detailsTabs.style.display = 'flex';
