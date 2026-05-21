@@ -5405,7 +5405,7 @@ button {
     color: var(--color-text);
     margin: 0;
     line-height: 1.2;
-    word-break: break-word;
+    max-width: 100%;
 }
 
 .user-details-pronouns {

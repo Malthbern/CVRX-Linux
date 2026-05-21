@@ -39,6 +39,48 @@ const DetailsType = Object.freeze({
     Instance: Symbol('instance'),
 });
 
+// Single-line auto-fit: keep the element at maxFontSize when it fits, scale
+// down proportionally otherwise. Floors at minFontSize so very long names stay
+// readable. Re-measures when the parent resizes (e.g. window resize).
+function applyAutoFitFont(element, { maxFontSize = 24, minFontSize = 12 } = {}) {
+    element.style.whiteSpace = 'nowrap';
+
+    let observer = null;
+    let rafHandle = null;
+
+    const measure = () => {
+        rafHandle = null;
+        const parent = element.parentElement;
+        if (!parent) return;
+
+        if (!element.isConnected) {
+            if (observer) { observer.disconnect(); observer = null; }
+            return;
+        }
+
+        // Reset to the ceiling first so we re-evaluate from scratch each pass.
+        element.style.fontSize = `${maxFontSize}px`;
+        const available = parent.clientWidth;
+        const natural = element.scrollWidth;
+        if (available > 0 && natural > available) {
+            const scaled = (available / natural) * maxFontSize;
+            element.style.fontSize = `${Math.max(minFontSize, scaled)}px`;
+        }
+
+        if (!observer && typeof ResizeObserver !== 'undefined') {
+            observer = new ResizeObserver(schedule);
+            observer.observe(parent);
+        }
+    };
+
+    const schedule = () => {
+        if (rafHandle !== null) return;
+        rafHandle = requestAnimationFrame(measure);
+    };
+
+    schedule();
+}
+
 // ===========
 // HELPER FUNCTIONS
 // ===========
@@ -275,11 +317,12 @@ function createDetailsHeaderStructure(entityInfo, entityType, entityId) {
     const entityName = document.createElement('h1');
     entityName.className = 'details-entity-name';
     entityName.textContent = decodeHtmlEntities(entityInfo.name) || 'Unknown';
-    
+
     // Add thumbnail and name to main info
     mainInfo.appendChild(thumbnailContainer);
     mainInfo.appendChild(entityName);
-    
+    applyAutoFitFont(entityName);
+
     // Create segments container
     const segmentsContainer = document.createElement('div');
     segmentsContainer.className = 'details-segments-container';
@@ -712,10 +755,11 @@ function createUserDetailsHeader(entityInfo, ShowDetailsCallback, entityId, isMy
     const entityName = document.createElement('h1');
     entityName.className = 'details-entity-name';
     entityName.textContent = decodeHtmlEntities(entityInfo.name) || 'Unknown User';
-    
+
     // Add thumbnail and name to main info
     mainInfo.appendChild(thumbnailContainer);
     mainInfo.appendChild(entityName);
+    applyAutoFitFont(entityName);
 
     // Pronouns row (shown for self always; for others only when set)
     const initialPronouns = decodeHtmlEntities(entityInfo.profilePronouns) || '';
