@@ -1353,11 +1353,12 @@ button {
     text-decoration: underline;
 }
 
-/* Override the shared .friend-name multi-line clamp so applyAutoFitFont can
-   measure and scale a single line cleanly. Without this the -webkit-box
-   display + line-clamp confuse measurement and the element can overflow its
-   flex parent. */
-.friend-list-node .friend-name {
+/* Override the shared .friend-name / .card-name multi-line clamp so
+   applyAutoFitFont can measure and scale a single line cleanly. Without this
+   the -webkit-box display + line-clamp confuse measurement and the element
+   can overflow its flex parent. */
+.friend-list-node .friend-name,
+.card-node .card-name {
     display: block;
     -webkit-line-clamp: unset;
     line-clamp: unset;
@@ -1410,7 +1411,7 @@ button {
     font-style: italic;
 }
 
-.friend-list-node .friend-quick-actions {
+.card-quick-actions {
     position: absolute;
     bottom: 8px;
     right: 8px;
@@ -1419,7 +1420,7 @@ button {
     z-index: 2;
 }
 
-.friend-list-node .friend-quick-action {
+.card-quick-action {
     width: 32px;
     height: 32px;
     padding: 0;
@@ -1435,20 +1436,20 @@ button {
     transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
-.friend-list-node .friend-quick-action:hover {
+.card-quick-action:hover {
     background-color: rgba(0, 0, 0, 0.85);
     transform: scale(1.08);
 }
 
-.friend-list-node .friend-quick-action .material-symbols-outlined {
+.card-quick-action .material-symbols-outlined {
     font-size: 18px;
 }
 
-.friend-list-node .friend-notification-toggle.active {
+.card-quick-action.notification-toggle.active {
     color: #4caf50;
 }
 
-.friend-list-node .friend-favourite-toggle.active {
+.card-quick-action.favourite-toggle.active {
     color: #f06292;
 }
 

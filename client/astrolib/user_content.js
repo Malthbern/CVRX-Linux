@@ -420,11 +420,11 @@ export function handleFriendsRefresh(friends, isRefresh) {
                 <div class="thumbnail-container">
                     <img src="${friendImgSrc}" data-hash="${friend.imageHash}" class="hidden"/>
                     ${statusIndicator}
-                    <div class="friend-quick-actions">
-                        <button type="button" class="friend-quick-action friend-notification-toggle" data-tooltip="Notifications off">
+                    <div class="card-quick-actions">
+                        <button type="button" class="card-quick-action notification-toggle" data-tooltip="Notifications off">
                             <span class="material-symbols-outlined">notifications_off</span>
                         </button>
-                        <button type="button" class="friend-quick-action friend-favourite-toggle${isFavouritedClass}" data-tooltip="Manage favourite categories">
+                        <button type="button" class="card-quick-action favourite-toggle${isFavouritedClass}" data-tooltip="Manage favourite categories">
                             <span class="material-symbols-outlined">favorite</span>
                         </button>
                     </div>
@@ -447,7 +447,7 @@ export function handleFriendsRefresh(friends, isRefresh) {
 
         // Notification toggle — fetch initial state in the background, then
         // mirror the details-page button's enabled/disabled visual state.
-        const notificationButton = friendCard.querySelector('.friend-notification-toggle');
+        const notificationButton = friendCard.querySelector('.notification-toggle');
         let notificationEnabled = false;
         const renderNotificationState = () => {
             notificationButton.querySelector('.material-symbols-outlined').textContent =
@@ -475,7 +475,7 @@ export function handleFriendsRefresh(friends, isRefresh) {
         });
 
         // Favourite quick-action — opens the same modal as the details page.
-        const favouriteButton = friendCard.querySelector('.friend-favourite-toggle');
+        const favouriteButton = friendCard.querySelector('.favourite-toggle');
         favouriteButton.addEventListener('click', (e) => {
             e.stopPropagation();
             showFavouritesModal('user', friend.id, friend.name, currentCategories, createElement, refreshContentAfterFavoritesUpdate);
@@ -708,11 +708,18 @@ export function handleAvatarsRefresh(ourAvatars) {
         const imgSrc = getCachedImage(ourAvatar.imageHash);
 
         // Create card similar to search and friends layout
+        const avatarCategoryIds = ourAvatar.categories || [];
+        const avatarFavouritedClass = avatarCategoryIds.length > 0 ? ' active' : '';
         const avatarNode = createElement('div', {
             className: 'avatars-wrapper--avatars-node card-node',
             innerHTML: `
                 <div class="thumbnail-container">
                     <img src="${imgSrc}" data-hash="${ourAvatar.imageHash}" class="hidden"/>
+                    <div class="card-quick-actions">
+                        <button type="button" class="card-quick-action favourite-toggle${avatarFavouritedClass}" data-tooltip="Manage favourite categories">
+                            <span class="material-symbols-outlined">favorite</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="card-content">
                     <p class="card-name">${ourAvatar.name}</p>
@@ -727,6 +734,16 @@ export function handleAvatarsRefresh(ourAvatars) {
         // Set placeholder background image and data-hash directly on the container
         const thumbnailContainer = avatarNode.querySelector('.thumbnail-container');
         setImageSource(thumbnailContainer, ourAvatar.imageHash, true);
+
+        // Wire favourite quick-action
+        const avatarFavouriteButton = avatarNode.querySelector('.favourite-toggle');
+        avatarFavouriteButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showFavouritesModal('avatar', ourAvatar.id, ourAvatar.name, avatarCategoryIds, createElement, refreshContentAfterFavoritesUpdate);
+        });
+
+        // Auto-fit name to one line
+        applyAutoFitFont(avatarNode.querySelector('.card-name'), { maxFontSize: 16, minFontSize: 10 });
 
         docFragment.appendChild(avatarNode);
     }
@@ -1006,12 +1023,19 @@ export function handleWorldsRefresh(ourWorlds) {
             </div>` : '';
 
         // Create card similar to search and friends layout
+        const worldCategoryIds = ourWorld.categories || [];
+        const worldFavouritedClass = worldCategoryIds.length > 0 ? ' active' : '';
         const worldNode = createElement('div', {
             className: 'worlds-wrapper--worlds-node card-node',
             innerHTML: `
                 ${playerCount}
                 <div class="thumbnail-container">
                     <img src="${imgSrc}" data-hash="${ourWorld.imageHash}" class="hidden"/>
+                    <div class="card-quick-actions">
+                        <button type="button" class="card-quick-action favourite-toggle${worldFavouritedClass}" data-tooltip="Manage favourite categories">
+                            <span class="material-symbols-outlined">favorite</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="card-content">
                     <p class="card-name">${ourWorld.name}</p>
@@ -1026,6 +1050,16 @@ export function handleWorldsRefresh(ourWorlds) {
         // Set placeholder background image and data-hash directly on the container
         const thumbnailContainer = worldNode.querySelector('.thumbnail-container');
         setImageSource(thumbnailContainer, ourWorld.imageHash, true);
+
+        // Wire favourite quick-action
+        const worldFavouriteButton = worldNode.querySelector('.favourite-toggle');
+        worldFavouriteButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showFavouritesModal('world', ourWorld.id, ourWorld.name, worldCategoryIds, createElement, refreshContentAfterFavoritesUpdate);
+        });
+
+        // Auto-fit name to one line
+        applyAutoFitFont(worldNode.querySelector('.card-name'), { maxFontSize: 16, minFontSize: 10 });
 
         docFragment.appendChild(worldNode);
     }
@@ -1376,11 +1410,18 @@ export function handlePropsRefresh(ourProps) {
         const imgSrc = getCachedImage(ourProp.imageHash);
 
         // Create card similar to search and friends layout
+        const propCategoryIds = ourProp.categories || [];
+        const propFavouritedClass = propCategoryIds.length > 0 ? ' active' : '';
         const propNode = createElement('div', {
             className: 'props-wrapper--props-node card-node',
             innerHTML: `
                 <div class="thumbnail-container">
                     <img src="${imgSrc}" data-hash="${ourProp.imageHash}" class="hidden"/>
+                    <div class="card-quick-actions">
+                        <button type="button" class="card-quick-action favourite-toggle${propFavouritedClass}" data-tooltip="Manage favourite categories">
+                            <span class="material-symbols-outlined">favorite</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="card-content">
                     <p class="card-name">${ourProp.name}</p>
@@ -1395,6 +1436,16 @@ export function handlePropsRefresh(ourProps) {
         // Set placeholder background image and data-hash directly on the container
         const thumbnailContainer = propNode.querySelector('.thumbnail-container');
         setImageSource(thumbnailContainer, ourProp.imageHash, true);
+
+        // Wire favourite quick-action
+        const propFavouriteButton = propNode.querySelector('.favourite-toggle');
+        propFavouriteButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showFavouritesModal('prop', ourProp.id, ourProp.name, propCategoryIds, createElement, refreshContentAfterFavoritesUpdate);
+        });
+
+        // Auto-fit name to one line
+        applyAutoFitFont(propNode.querySelector('.card-name'), { maxFontSize: 16, minFontSize: 10 });
 
         docFragment.appendChild(propNode);
     }
