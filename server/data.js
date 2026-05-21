@@ -867,7 +867,7 @@ class Core {
                     const previous = this.recentActivityCache[friendUpdate.id] ?? null;
 
                     // Ignore updates if they are the same as the previous state
-                    if (IsObjectEqualExcept(current, previous, ['imageBase64'])) continue;
+                    if (IsObjectEqualExcept(current, previous, [])) continue;
 
                     // Log friend update for debugging
                     log.info(`[FriendNotification] Processing friend update for ID: ${friendUpdate.id}`);

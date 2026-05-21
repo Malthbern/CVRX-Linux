@@ -27,8 +27,9 @@ import {
     ShowDetails
 } from './astrolib/details_constructor.js';
 import { loadShares } from './astrolib/shares.js';
-import { 
-    imageCache,
+import {
+    markImageReady,
+    clearImageCache,
     getCachedImage,
     setImageSource,
     initializeFriendsModule,
@@ -819,20 +820,23 @@ window.API.onGetActiveUser((_event, activeUser) => {
 
 // Add image loading handler
 window.API.onImageLoaded((_event, imageData) => {
-    const { imageHash, imageBase64 } = imageData;
+    const { imageHash } = imageData;
+    if (!imageHash) return;
 
-    // Cache the image when it's loaded
-    imageCache[imageHash] = imageBase64;
+    // Mark the hash as servable so getCachedImage() returns the protocol URL.
+    markImageReady(imageHash);
+
+    const imageUrl = `cvr-image://${imageHash}`;
 
     // Update all elements with matching data-hash
     document.querySelectorAll(`[data-hash="${imageHash}"]`).forEach(element => {
         if (element.classList.contains('profile-navbar-button')) {
-            element.style.backgroundImage = `url(${imageBase64})`;
+            element.style.backgroundImage = `url('${imageUrl}')`;
         } else if (element.tagName === 'IMG') {
-            element.src = imageBase64;
+            element.src = imageUrl;
         } else if (element.classList.contains('thumbnail-container')) {
             // For thumbnail containers using background images
-            element.style.backgroundImage = `url('${imageBase64}')`;
+            element.style.backgroundImage = `url('${imageUrl}')`;
             element.style.backgroundSize = 'cover';
         }
     });
@@ -2129,7 +2133,7 @@ window.API.onActiveInstancesUpdate((_event, activeInstancesData) => {
 
         let friendCount = 0;
         for (const member of result.members) {
-            let userIconSource = member?.imageBase64 ?? 'img/ui/placeholder.png';
+            let userIconSource = getCachedImage(member?.imageHash);
             let userIcon = createElement('img', {
                 className: 'active-instance-node--user-icon',
                 src: userIconSource,
@@ -2211,7 +2215,7 @@ window.API.onActiveInstancesUpdate((_event, activeInstancesData) => {
         instanceName = `<span class="instance-privacy-type material-symbols-outlined" data-tooltip="${privacyTooltip}">${privacyIcon}</span>&nbsp;${instanceName}`;
 
         // Depending on whether it's a refresh or not the image might be already loaded
-        const worldImageSource = result?.world?.imageBase64 ?? 'img/ui/placeholder.png';
+        const worldImageSource = getCachedImage(result?.world?.imageHash);
 
         // If no friends then no friend counter :'(
 
@@ -2817,7 +2821,7 @@ window.API.onRecentActivityUpdate((_event, recentActivities) => {
                 const currentInstanceInfo = `${name}${type ? ` <span class="history-type">${type}</span>` : ''}`;
 
                 // Depending on whether it's a refresh or not the image might be already loaded
-                const friendImgSrc = recentActivity.current.imageBase64 ?? 'img/ui/placeholder.png';
+                const friendImgSrc = getCachedImage(recentActivity.current.imageHash);
 
                 const imgOnlineClass = recentActivity.current.isOnline ? 'class="icon-is-online"' : '';
 
@@ -2974,7 +2978,7 @@ document.querySelector('#clear-cached-images-button').addEventListener('click', 
         if (result.success) {
             pushToast(result.message, 'confirm');
             // Clear the in-memory cache as well
-            Object.keys(imageCache).forEach(key => delete imageCache[key]);
+            clearImageCache();
         } else {
             pushToast(result.message, 'error');
         }

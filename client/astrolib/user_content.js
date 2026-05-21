@@ -20,25 +20,38 @@ const log = (msg) => {
 // FRIENDS SECTION
 // ===============
 
-// Image cache for all image types (renamed from friendImageCache)
-export const imageCache = {};
+// Set of image hashes that the main process has confirmed are on disk and
+// therefore servable via the cvr-image:// protocol. Previously this map held
+// the full base64 string per image; that pinned hundreds of MB in the JS heap.
+export const readyImageHashes = new Set();
 
-// Helper function to get cached image or placeholder
+export function markImageReady(imageHash) {
+    if (imageHash) readyImageHashes.add(imageHash);
+}
+
+export function clearImageCache() {
+    readyImageHashes.clear();
+}
+
+// Helper function to get cached image URL or placeholder
 export function getCachedImage(imageHash) {
-    return imageCache[imageHash] || 'img/ui/placeholder.png';
+    if (imageHash && readyImageHashes.has(imageHash)) {
+        return `cvr-image://${imageHash}`;
+    }
+    return 'img/ui/placeholder.png';
 }
 
 // Helper function to set image source with cache check
 export function setImageSource(element, imageHash, isBackgroundImage = false) {
     const imageSrc = getCachedImage(imageHash);
-    
+
     if (isBackgroundImage) {
         element.style.backgroundImage = `url('${imageSrc}')`;
         element.style.backgroundSize = 'cover';
     } else {
         element.src = imageSrc;
     }
-    
+
     // Always set the hash for future updates
     element.dataset.hash = imageHash;
 }
@@ -305,11 +318,6 @@ export function handleFriendsRefresh(friends, isRefresh) {
         const instanceTypeStr = type ? `${type}` : '';
         const onlineFriendInPrivateClass = friend.instance ? '' : 'friend-is-offline';
 
-        // Use cached image if available, otherwise use placeholder
-        if (friend.imageBase64) {
-            // If we received the image with this update, cache it
-            imageCache[friend.imageHash] = friend.imageBase64;
-        }
         // Use cached image or fall back to placeholder
         const friendImgSrc = getCachedImage(friend.imageHash);
 
@@ -1408,7 +1416,7 @@ export function resetUserContentCache() {
     Object.keys(propsData).forEach(key => delete propsData[key]);
     
     // Clear friend image cache
-    Object.keys(imageCache).forEach(key => delete imageCache[key]);
+    clearImageCache();
     
     // Clear friend categories
     friendCategories = [];

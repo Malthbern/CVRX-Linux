@@ -1,9 +1,15 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
-const { app, BrowserWindow, Menu, ipcMain, nativeImage, Tray } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, nativeImage, protocol, Tray } = require('electron');
 
 app.setAppUserModelId('com.squirrel.CVRX.CVRX');
+
+// Custom protocol for serving cached images directly from disk to the renderer.
+// Must be declared before app.ready — the handler itself is wired up later in Cache.RegisterProtocol.
+protocol.registerSchemesAsPrivileged([
+    { scheme: 'cvr-image', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true } },
+]);
 
 // Prevent app launching multiple times during the installation
 if (require('electron-squirrel-startup')) {
@@ -153,6 +159,8 @@ const BuildTray = async (mainWindow) => {
 };
 
 app.whenReady().then(async () => {
+    Cache.RegisterProtocol();
+
     await CreateWindow();
 
     await BuildTray(mainWindow, app);

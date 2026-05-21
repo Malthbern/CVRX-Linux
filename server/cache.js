@@ -1,4 +1,4 @@
-const { app, nativeImage } = require('electron');
+const { app, protocol } = require('electron');
 const axios = require('axios');
 const path = require('path');
 const urlLib = require('url');
@@ -11,6 +11,31 @@ const AppDataPath = app.getPath('userData');
 const CachePath = path.join(AppDataPath, 'CVRCache');
 const CacheImagesPath = path.join(CachePath, 'Images');
 const log = require('./logger').GetLogger('Cache');
+
+// Extensions we may have stored in the image cache. The protocol handler only
+// receives a bare hash, so it tries each candidate to locate the file on disk.
+const KnownImageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+const MimeByExtension = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+};
+
+async function GetCachedFilePath(hash) {
+    if (!hash) return null;
+    for (const ext of KnownImageExtensions) {
+        const candidate = path.join(CacheImagesPath, hash + ext);
+        try {
+            await fs.promises.access(candidate, fs.constants.R_OK);
+            return candidate;
+        } catch { /* try next extension */ }
+    }
+    return null;
+}
+
+exports.GetCachedFilePath = GetCachedFilePath;
 
 
 exports.GetHash = (string) => {
@@ -25,6 +50,36 @@ let processing = true;
 
 exports.Initialize = (win) => {
     window = win;
+};
+
+let protocolRegistered = false;
+exports.RegisterProtocol = () => {
+    if (protocolRegistered) return;
+    protocolRegistered = true;
+
+    protocol.handle('cvr-image', async (request) => {
+        try {
+            // URL form is cvr-image://<hash> — the hash lands in hostname.
+            const url = new URL(request.url);
+            const hash = url.hostname;
+            const filePath = await GetCachedFilePath(hash);
+            if (!filePath) return new Response(null, { status: 404 });
+
+            const data = await fs.promises.readFile(filePath);
+            const mime = MimeByExtension[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+            return new Response(data, {
+                status: 200,
+                headers: {
+                    'Content-Type': mime,
+                    'Cache-Control': 'public, max-age=86400',
+                },
+            });
+        }
+        catch (err) {
+            log.error('[cvr-image protocol] Failed to serve request', request.url, err);
+            return new Response(null, { status: 500 });
+        }
+    });
 };
 
 exports.ResetProcessQueue = () => {
@@ -51,23 +106,12 @@ function QueueCacheClean() {
     timeoutId = setTimeout(CleanCache, 2000);
 }
 
-function SendNativeImage(nativeImg, urlObj) {
-    if (!nativeImg) return;
-
-    return new Promise((resolve) => {
-        const imDataUrl = nativeImg.toDataURL();
-
-        // Save the image to the object
-        urlObj.obj.imageBase64 = imDataUrl;
-
-        // Send the loaded image to the main window
-        window.webContents.send('image-load', {
-            imageUrl: urlObj.url,
-            imageHash: urlObj.hash,
-            imageBase64: imDataUrl,
-        });
-
-        resolve();
+function NotifyImageReady(urlObj) {
+    // The renderer doesn't need the bytes — it'll request them via the
+    // cvr-image:// protocol handler, which streams straight from disk.
+    window.webContents.send('image-load', {
+        imageUrl: urlObj.url,
+        imageHash: urlObj.hash,
     });
 }
 
@@ -125,44 +169,33 @@ async function FetchImage(urlObj) {
     const fileExtension = path.extname(urlLib.parse(url).pathname);
     const imagePath = path.join(CacheImagesPath, hash + fileExtension);
 
-    // Check if the image, and grab it if it does!
+    // Check if the image is already cached on disk
     try {
         await fs.promises.access(imagePath, fs.constants.R_OK);
-        try {
-            // Since it's not an api access we can do it sync
-            const image = await fs.promises.readFile(imagePath);
-            // log.verbose(`Fetching ${url} from cache!`);
-            await SendNativeImage(nativeImage.createFromBuffer(image), urlObj);
-        }
-        catch (err) {
-            log.error(`[FetchImage] Reading ${imagePath} from cache...`, err);
-        }
+        NotifyImageReady(urlObj);
+        return;
+    }
+    catch { /* not cached — fall through to download */ }
+
+    // The image is not cached, let's download it
+    const image = await DownloadImage(url);
+    if (image === null) return;
+
+    try {
+        await fs.promises.mkdir(CacheImagesPath, { recursive: true });
     }
     catch (err) {
-
-        // The image is not cached, let's download it
-        const image = await DownloadImage(url);
-
-        if (image !== null) {
-            try {
-                // Cache the image async
-                await fs.promises.mkdir(CacheImagesPath, { recursive: true });
-            }
-            catch (err) {
-                log.error(`[FetchImage] Creating Path for ${imagePath}...`, err);
-            }
-
-            try {
-                await CacheImage(imagePath, image);
-            }
-            catch (err) {
-                log.error(`[FetchImage] Caching image ${CacheImagesPath}...`, err);
-            }
-
-            // log.verbose(`Fetching ${url} from http!`);
-            await SendNativeImage(nativeImage.createFromBuffer(image), urlObj);
-        }
+        log.error(`[FetchImage] Creating Path for ${imagePath}...`, err);
     }
+
+    try {
+        await CacheImage(imagePath, image);
+    }
+    catch (err) {
+        log.error(`[FetchImage] Caching image ${CacheImagesPath}...`, err);
+    }
+
+    NotifyImageReady(urlObj);
 }
 
 async function CacheImage(imagePath, image) {
