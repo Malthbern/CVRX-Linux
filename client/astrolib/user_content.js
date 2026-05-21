@@ -5,6 +5,26 @@
 import { pushToast } from './toasty_notifications.js';
 import { applyTooltips } from './tooltip.js';
 import { createElement } from '../frontend.js';
+import { showFavouritesModal } from './favourites_modal.js';
+import { applyAutoFitFont } from './details_constructor.js';
+
+// Material Symbol that best represents each instance privacy / status label.
+// Falls back to a generic help icon for anything not in the table.
+function getInstanceTypeIcon(typeLabel) {
+    switch (typeLabel) {
+        case 'Public': return 'public';
+        case 'Friends of Friends': return 'groups';
+        case 'Friends Only': return 'group';
+        case 'Group': return 'diversity_3';
+        case 'Friends of Group': return 'workspaces';
+        case 'Group Public': return 'language';
+        case 'Everyone Can Invite': return 'forward_to_inbox';
+        case 'Owner Must Invite': return 'lock_person';
+        case 'Offline Instance': return 'wifi_off';
+        case 'Private Instance': return 'lock';
+        default: return 'help_outline';
+    }
+}
 
 // Import shared log function or create local one
 let isPackaged = false;
@@ -354,7 +374,7 @@ export function handleFriendsRefresh(friends, isRefresh) {
         // Setting up the HTMLElement used for the Friends List page.
         const offlineFriendClass = friend.isOnline ? '' : 'friend-is-offline';
 
-        // Status indicator
+        // Status indicator (top-left pill — the sole online/offline cue now)
         const statusIndicator = friend.isOnline
             ? '<div class="status-indicator"><span class="material-symbols-outlined">circle</span>Online</div>'
             : '<div class="status-indicator offline"><span class="material-symbols-outlined">circle</span>Offline</div>';
@@ -368,10 +388,29 @@ export function handleFriendsRefresh(friends, isRefresh) {
             </div>`;
         }
 
-        // World/instance icon
-        const worldIcon = friend.isOnline
-            ? '<span class="material-symbols-outlined">public</span>'
-            : '<span class="material-symbols-outlined">public_off</span>';
+        // Build stacked status rows. Type row covers privacy / instance state
+        // ("Public", "Private Instance", ...); world row names the world if any.
+        // For plain offline friends we hide both rows — the top-left status
+        // pill already conveys that.
+        const showWorldRow = name && name !== 'Offline';
+        const typeRowHtml = type
+            ? `<div class="friend-status-row friend-status-type-row">
+                   <span class="material-symbols-outlined">${getInstanceTypeIcon(type)}</span>
+                   <span>${type}</span>
+               </div>`
+            : '';
+        const worldRowHtml = showWorldRow
+            ? `<div class="friend-status-row friend-status-world-row">
+                   <span class="material-symbols-outlined">pin_drop</span>
+                   <span>${name}</span>
+               </div>`
+            : '';
+        const statusDetailsHtml = (typeRowHtml || worldRowHtml)
+            ? `<div class="friend-status-details ${offlineFriendClass}">${typeRowHtml}${worldRowHtml}</div>`
+            : '';
+
+        const currentCategories = friend.categories || [];
+        const isFavouritedClass = currentCategories.length > 0 ? ' active' : '';
 
         // Create the friend card with the same structure as search results
         let friendCard = createElement('div', {
@@ -381,11 +420,18 @@ export function handleFriendsRefresh(friends, isRefresh) {
                 <div class="thumbnail-container">
                     <img src="${friendImgSrc}" data-hash="${friend.imageHash}" class="hidden"/>
                     ${statusIndicator}
+                    <div class="friend-quick-actions">
+                        <button type="button" class="friend-quick-action friend-notification-toggle" data-tooltip="Notifications off">
+                            <span class="material-symbols-outlined">notifications_off</span>
+                        </button>
+                        <button type="button" class="friend-quick-action friend-favourite-toggle${isFavouritedClass}" data-tooltip="Manage favourite categories">
+                            <span class="material-symbols-outlined">favorite</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="friend-content">
                     <p class="friend-name">${friend.name}</p>
-                    <p class="${offlineFriendClass} friend-status-type">${instanceTypeStr}</p>
-                    <p class="${offlineFriendClass} friend-status">${worldIcon} ${name}</p>
+                    ${statusDetailsHtml}
                 </div>
             `,
             onClick: () => ShowDetailsWrapper(DetailsType.User, friend.id),
@@ -395,11 +441,52 @@ export function handleFriendsRefresh(friends, isRefresh) {
         const thumbnailContainer = friendCard.querySelector('.thumbnail-container');
         setImageSource(thumbnailContainer, friend.imageHash, true);
 
+        // Auto-fit the friend name to one line: keeps the 16px max from the
+        // shared .friend-name rule, scales down for long names instead of wrapping.
+        applyAutoFitFont(friendCard.querySelector('.friend-name'), { maxFontSize: 16, minFontSize: 10 });
+
+        // Notification toggle — fetch initial state in the background, then
+        // mirror the details-page button's enabled/disabled visual state.
+        const notificationButton = friendCard.querySelector('.friend-notification-toggle');
+        let notificationEnabled = false;
+        const renderNotificationState = () => {
+            notificationButton.querySelector('.material-symbols-outlined').textContent =
+                notificationEnabled ? 'notifications_active' : 'notifications_off';
+            notificationButton.classList.toggle('active', notificationEnabled);
+            notificationButton.dataset.tooltip = notificationEnabled ? 'Notifications on' : 'Notifications off';
+        };
+        window.API.isFriendNotificationEnabled(friend.id).then(enabled => {
+            notificationEnabled = enabled;
+            renderNotificationState();
+        }).catch(err => log(`Failed to read notification state for ${friend.id}: ${err}`));
+
+        notificationButton.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            try {
+                const newState = !notificationEnabled;
+                await window.API.setFriendNotification(friend.id, newState);
+                notificationEnabled = newState;
+                renderNotificationState();
+                pushToast(`Friend notifications ${newState ? 'enabled' : 'disabled'} for ${friend.name}`, 'confirm');
+            } catch (error) {
+                log(`Failed to toggle notification for ${friend.id}: ${error}`);
+                pushToast('Failed to update notification settings', 'error');
+            }
+        });
+
+        // Favourite quick-action — opens the same modal as the details page.
+        const favouriteButton = friendCard.querySelector('.friend-favourite-toggle');
+        favouriteButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showFavouritesModal('user', friend.id, friend.name, currentCategories, createElement, refreshContentAfterFavoritesUpdate);
+        });
+
         friendCards.push(friendCard);
     }
 
     // Add all friend cards to the DOM at once
     friendsListNode.append(...friendCards);
+    applyTooltips();
 
     // After getting all friends statuses, populate the Friends Sidebar in order of Categories
     for (const key in categories) {

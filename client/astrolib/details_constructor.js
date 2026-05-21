@@ -42,7 +42,7 @@ const DetailsType = Object.freeze({
 // Single-line auto-fit: keep the element at maxFontSize when it fits, scale
 // down proportionally otherwise. Floors at minFontSize so very long names stay
 // readable. Re-measures when the parent resizes (e.g. window resize).
-function applyAutoFitFont(element, { maxFontSize = 24, minFontSize = 12 } = {}) {
+export function applyAutoFitFont(element, { maxFontSize = 24, minFontSize = 12 } = {}) {
     element.style.whiteSpace = 'nowrap';
 
     let observer = null;
