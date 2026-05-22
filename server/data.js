@@ -698,13 +698,9 @@ class Core {
         }
         catch (e) {
             log.error('[Authenticate] Error while authentication or initial requests...', e.toString(), e.message?.toString());
-            await dialog.showErrorBox(
-                'Authentication/Initial Requests failed',
-                'Something went wrong during CVRX Startup. Make sure you have an internet connection.' +
-                '\nThe current user will be logged out and the application will quit!\n' + e.toString(),
-            );
             await Config.ClearActiveCredentials();
-            this.app.quit();
+            await this.SendToLoginPage();
+            this.SendToRenderer('auth-error', e.toString());
         }
         // const authentication = {
         //     username: 'XXXXXXXXX',

@@ -3698,6 +3698,20 @@ button {
     padding-left: 1.25rem;
 }
 
+.auth-error-detail {
+    margin: 0.5rem 0 0 0;
+    padding: 0.5rem;
+    background: var(--color-background);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 12rem;
+    overflow-y: auto;
+}
+
 .prompt-text li {
     margin: 0.15rem 0;
 }

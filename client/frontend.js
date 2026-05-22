@@ -525,6 +525,35 @@ window.API.onLoginPage((_event, _availableCredentials) => {
     loadingScreen.updateStatus('Checking credentials...');
 });
 
+// Surface authentication / initial-request failures in-app rather than via an
+// OS error box that previously dragged the whole process down with it.
+window.API.onAuthError((_event, errorDetails) => {
+    loadingScreen.hide();
+
+    const modal = createElement('div', { className: 'prompt' });
+    const title = createElement('div', { className: 'prompt-title', textContent: 'Sign-In Failed' });
+    const text = createElement('div', { className: 'prompt-text' });
+    const summary = createElement('p', {
+        textContent: 'Something went wrong while signing you in. Check your internet connection and try again. You’ve been logged out so you can pick a different profile or re-enter your credentials.',
+    });
+    const detail = createElement('pre', {
+        className: 'auth-error-detail',
+        textContent: errorDetails || 'Unknown error',
+    });
+    text.append(summary, detail);
+
+    const buttons = createElement('div', { className: 'prompt-buttons' });
+    const okButton = createElement('button', {
+        className: 'prompt-btn-confirm',
+        textContent: 'OK',
+        onClick: () => closePrompt(modal),
+    });
+    buttons.append(okButton);
+
+    modal.append(title, text, buttons);
+    openPrompt(modal);
+});
+
 // Hide loading screen when main content is ready
 window.API.onHomePage((_event) => {
     loadingScreen.hide();

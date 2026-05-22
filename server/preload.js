@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('API', {
     onLoginPage: (callback) => ipcRenderer.on('page-login', callback),
     onLoadingPage: (callback) => ipcRenderer.on('page-loading', callback),
     onHomePage: (callback) => ipcRenderer.on('page-home', callback),
+    onAuthError: (callback) => ipcRenderer.on('auth-error', callback),
 
     // Account management
     authenticate: (username, credential, isAccessKey, saveCredentials) => ipcRenderer.invoke('login-authenticate', username, credential, isAccessKey, saveCredentials),
