@@ -54,6 +54,13 @@ app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4092');
 // Store reference to main window for access in IPC handlers
 let mainWindow = null;
 
+// Set when something has asked the app to actually quit (app.quit(), a fatal
+// error path, a renderer crash, etc.). The window's close handler checks this
+// before deciding whether to hide-to-tray — without it, a programmatic quit
+// while CloseToSystemTray is enabled silently hides the window and leaves the
+// process stuck running in the background.
+let forceQuit = false;
+
 const CreateWindow = async () => {
     log.info(`Starting CVRX... Version: ${app.getVersion()}`);
 
@@ -199,18 +206,23 @@ app.whenReady().then(async () => {
     mainWindow.webContents.on('render-process-gone', (event, detailed) => {
         log.warn('render-process-gone ' + detailed.reason + ', exitCode = ' + detailed.exitCode);
         log.warn('render-process-gone', { event, detailed });
-        //  logger.info("!crashed, reason: " + detailed.reason + ", exitCode = " + detailed.exitCode)
-        // if (detailed.reason == "crashed"){
-        //     // relaunch app
-        //     app.relaunch({ args: process.argv.slice(1).concat(['--relaunch']) })
-        //     app.exit(0)
-        // }
+        // The renderer is gone — there's nothing left to show the user. Quit
+        // the process instead of leaving a headless main process running.
+        forceQuit = true;
+        app.quit();
     });
 
     // Override default close event to close to taskbar instead
     mainWindow.on('close', (event) => {
 
         log.info('Received a close event...');
+
+        // If a quit was explicitly requested (app.quit, fatal error, renderer
+        // crash, update install), bypass the tray flow entirely.
+        if (forceQuit) {
+            log.info('Force-quit requested, allowing app to quit properly...');
+            return; // Don't prevent default action, let the app quit
+        }
 
         // Check if we're in the middle of an update installation
         // If so, allow the app to quit properly regardless of tray settings
@@ -416,6 +428,13 @@ app.on('ready', () => {
     ipcMain.on('notification-log-error', (event, message, data) => {
         log.error(message, data);
     });
+});
+
+// Any caller of app.quit() funnels through here before window close events
+// fire, so the window's close handler can tell a real quit apart from a
+// user-clicked window close and skip the hide-to-tray path.
+app.on('before-quit', () => {
+    forceQuit = true;
 });
 
 app.on('window-all-closed', () => app.quit());
