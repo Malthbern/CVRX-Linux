@@ -346,9 +346,26 @@ export function createElement(type, options = {}) {
     return element;
 }
 
+// Shared prompt layer helpers. Multiple modals can be open at once (e.g. the
+// updater modal opening on top of an existing socket-disconnect prompt), so
+// the shade must only be hidden when the last modal has been removed —
+// otherwise closing one modal also hides any siblings still in the layer.
+export function openPrompt(modal) {
+    const shade = document.querySelector('.prompt-layer');
+    if (!shade) return;
+    if (modal && modal.parentNode !== shade) shade.appendChild(modal);
+    shade.style.display = 'flex';
+}
+
+export function closePrompt(modal) {
+    const shade = document.querySelector('.prompt-layer');
+    if (!shade) return;
+    if (modal && modal.parentNode === shade) modal.remove();
+    if (!shade.querySelector('.prompt')) shade.style.display = 'none';
+}
+
 // Temporary reconnect prompt - will be expanded with a proper library later.
 function promptReconnect() {
-    const promptShade = document.querySelector('.prompt-layer');
     const newPrompt = createElement('div', { className: 'prompt' });
     const promptTitle = createElement('div', { className: 'prompt-title', textContent: 'Socket Error' });
     const promptText = createElement('div', { className: 'prompt-text', textContent: 'Socket failed to reconnect after 5 attempts. Click below to manually reconnect.' });
@@ -359,21 +376,27 @@ function promptReconnect() {
         onClick: async () => {
             // Do your reconnect magic here.
             await window.API.reconnectWebSocket();
-            newPrompt.remove();
-            promptShade.style.display = 'none';
+            closePrompt(newPrompt);
         },
     });
 
     promptButtons.append(confirmButton);
     newPrompt.append(promptTitle, promptText, promptButtons);
-    promptShade.append(newPrompt);
-    promptShade.style.display = 'flex';
+    openPrompt(newPrompt);
 }
 
 // Update prompt using the new modal system
 function promptUpdate(updateInfo) {
-    const promptShade = document.querySelector('.prompt-layer');
-    const newPrompt = createElement('div', { className: 'prompt' });
+    // If the update modal is already in the DOM (e.g. another modal closed
+    // and hid the shade out from under it), just re-show the shade instead
+    // of building a duplicate.
+    const existingUpdatePrompt = document.querySelector('.prompt-layer .update-prompt');
+    if (existingUpdatePrompt) {
+        openPrompt(existingUpdatePrompt);
+        return;
+    }
+
+    const newPrompt = createElement('div', { className: 'prompt update-prompt' });
     const promptTitle = createElement('div', { className: 'prompt-title', textContent: 'Update Available' });
     
     // Create main prompt text with version info
@@ -409,8 +432,7 @@ function promptUpdate(updateInfo) {
         textContent: updateInfo.autoInstall ? 'Download and Install' : 'View Release on GitHub',
         onClick: async () => {
             try {
-                newPrompt.remove();
-                promptShade.style.display = 'none';
+                closePrompt(newPrompt);
 
                 if (updateInfo.autoInstall) {
                     pushToast('Downloading update... The app will restart automatically once installation begins.', 'info');
@@ -431,8 +453,7 @@ function promptUpdate(updateInfo) {
         onClick: async () => {
             try {
                 await window.API.updateAction('askLater', updateInfo);
-                newPrompt.remove();
-                promptShade.style.display = 'none';
+                closePrompt(newPrompt);
             } catch (error) {
                 pushToast('Failed to set update reminder', 'error');
             }
@@ -445,8 +466,7 @@ function promptUpdate(updateInfo) {
         onClick: async () => {
             try {
                 await window.API.updateAction('ignore', updateInfo);
-                newPrompt.remove();
-                promptShade.style.display = 'none';
+                closePrompt(newPrompt);
             } catch (error) {
                 pushToast('Failed to ignore update', 'error');
             }
@@ -459,8 +479,7 @@ function promptUpdate(updateInfo) {
         onClick: async () => {
             try {
                 await window.API.updateAction('skip', updateInfo);
-                newPrompt.remove();
-                promptShade.style.display = 'none';
+                closePrompt(newPrompt);
             } catch (error) {
                 pushToast('Failed to skip version', 'error');
             }
@@ -469,8 +488,7 @@ function promptUpdate(updateInfo) {
 
     promptButtons.append(downloadButton, askLaterButton, ignoreButton, skipButton);
     newPrompt.append(promptTitle, promptText, promptButtons);
-    promptShade.append(newPrompt);
-    promptShade.style.display = 'flex';
+    openPrompt(newPrompt);
 }
 
 // ===============
@@ -572,7 +590,6 @@ function formatFileSize(bytes) {
 
 // Create download progress modal
 function createDownloadProgressModal(fileName) {
-    const promptShade = document.querySelector('.prompt-layer');
     downloadProgressModal = createElement('div', { className: 'prompt download-progress-modal' });
     
     const modalTitle = createElement('div', { 
@@ -612,8 +629,7 @@ function createDownloadProgressModal(fileName) {
     
     modalContent.append(fileNameDisplay, downloadProgressContainer, progressDetails);
     downloadProgressModal.append(modalTitle, modalContent);
-    promptShade.append(downloadProgressModal);
-    promptShade.style.display = 'flex';
+    openPrompt(downloadProgressModal);
 }
 
 // Update download progress
@@ -676,11 +692,9 @@ window.API.onUpdateDownloadComplete((_event, data) => {
 // Handle dismiss update prompt event (when notification actions are used)
 window.API.onDismissUpdatePrompt((_event) => {
     log('Dismissing update prompt due to notification action');
-    const promptShade = document.querySelector('.prompt-layer');
-    const updatePrompt = promptShade.querySelector('.prompt');
-    if (updatePrompt && promptShade.style.display === 'flex') {
-        updatePrompt.remove();
-        promptShade.style.display = 'none';
+    const updatePrompt = document.querySelector('.prompt-layer .update-prompt');
+    if (updatePrompt) {
+        closePrompt(updatePrompt);
         log('Update prompt dismissed successfully');
     }
 });
@@ -2957,11 +2971,20 @@ document.querySelector('#logout-button').addEventListener('click', async _event 
 document.querySelector('#check-updates-button').addEventListener('click', async _event => {
     _event.target.disabled = true;
     try {
-        const { hasUpdates, msg, updateInfo } = await window.API.checkForUpdates();
-        if (hasUpdates && updateInfo) {
-            promptUpdate(updateInfo);
+        // If the update modal is already in the prompt layer — e.g. another
+        // modal closed and hid the shade out from under it — just re-show it
+        // rather than asking the backend, which would otherwise short-circuit
+        // because `dialogOpened` is still set on its side.
+        const existingUpdatePrompt = document.querySelector('.prompt-layer .update-prompt');
+        if (existingUpdatePrompt) {
+            openPrompt(existingUpdatePrompt);
         } else {
-            pushToast(msg, 'confirm');
+            const { hasUpdates, msg, updateInfo } = await window.API.checkForUpdates();
+            if (hasUpdates && updateInfo) {
+                promptUpdate(updateInfo);
+            } else {
+                pushToast(msg, 'confirm');
+            }
         }
     } catch (error) {
         pushToast(error.message || 'Failed to check for updates', 'error');
@@ -4143,7 +4166,6 @@ manageFriendNotificationsButton.addEventListener('click', async () => {
 
 // Function to show the manage friend notifications modal
 function showManageFriendNotificationsModal(friendsWithNotifications) {
-    const modalShade = document.querySelector('.prompt-layer');
     const modal = createElement('div', { className: 'prompt manage-notifications-modal' });
     
     // Modal title
@@ -4239,9 +4261,8 @@ function showManageFriendNotificationsModal(friendsWithNotifications) {
                 title: 'View friend profile',
                 onClick: () => {
                     // Close the modal first
-                    modal.remove();
-                    modalShade.style.display = 'none';
-                    
+                    closePrompt(modal);
+
                     // Open the friend's profile
                     ShowDetailsWrapper(DetailsType.User, friend.id);
                 }
@@ -4270,19 +4291,15 @@ function showManageFriendNotificationsModal(friendsWithNotifications) {
     const closeButton = createElement('button', {
         className: 'prompt-btn-neutral',
         textContent: 'Close',
-        onClick: () => {
-            modal.remove();
-            modalShade.style.display = 'none';
-        }
+        onClick: () => closePrompt(modal),
     });
-    
+
     modalButtons.appendChild(closeButton);
-    
+
     // Assemble modal
     modal.append(modalTitle, modalContent, modalButtons);
-    modalShade.append(modal);
-    modalShade.style.display = 'flex';
-    
+    openPrompt(modal);
+
     // Apply tooltips to newly created elements
     applyTooltips();
 }

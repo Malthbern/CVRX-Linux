@@ -4,6 +4,7 @@
 
 import { pushToast } from './toasty_notifications.js';
 import { applyTooltips } from './tooltip.js';
+import { openPrompt, closePrompt } from '../frontend.js';
 
 // Logging function to prevent memory leaking when bundled
 let isPackaged = false;
@@ -169,7 +170,6 @@ function createAddShareCard(onAdd, createElement) {
 
 // Show confirmation modal for removing a share
 function showRemoveShareConfirmation(user, onConfirm, createElement) {
-    const confirmShade = document.querySelector('.prompt-layer');
     const confirmPrompt = createElement('div', { className: 'prompt' });
     const confirmTitle = createElement('div', { className: 'prompt-title', textContent: 'Remove Share' });
     const confirmText = createElement('div', {
@@ -184,8 +184,7 @@ function showRemoveShareConfirmation(user, onConfirm, createElement) {
         onClick: async () => {
             try {
                 await onConfirm(user.id);
-                confirmPrompt.remove();
-                confirmShade.style.display = 'none';
+                closePrompt(confirmPrompt);
             } catch (error) {
                 log('Failed to remove share:', error);
                 pushToast('Failed to remove share', 'error');
@@ -196,21 +195,16 @@ function showRemoveShareConfirmation(user, onConfirm, createElement) {
     const cancelButton = createElement('button', {
         className: 'prompt-btn-neutral',
         textContent: 'Cancel',
-        onClick: () => {
-            confirmPrompt.remove();
-            confirmShade.style.display = 'none';
-        },
+        onClick: () => closePrompt(confirmPrompt),
     });
 
     confirmButtons.append(confirmButton, cancelButton);
     confirmPrompt.append(confirmTitle, confirmText, confirmButtons);
-    confirmShade.append(confirmPrompt);
-    confirmShade.style.display = 'flex';
+    openPrompt(confirmPrompt);
 }
 
 // Show modal for adding a new share with user search
 function showAddShareModal(onAdd, createElement) {
-    const modalShade = document.querySelector('.prompt-layer');
     const modal = createElement('div', { className: 'prompt shares-modal' });
     
     // Modal title
@@ -254,26 +248,22 @@ function showAddShareModal(onAdd, createElement) {
     const cancelButton = createElement('button', {
         className: 'prompt-btn-neutral',
         textContent: 'Cancel',
-        onClick: () => {
-            modal.remove();
-            modalShade.style.display = 'none';
-        },
+        onClick: () => closePrompt(modal),
     });
-    
+
     modalButtons.appendChild(cancelButton);
     modal.append(modalTitle, modalContent, modalButtons);
-    modalShade.append(modal);
-    modalShade.style.display = 'flex';
-    
+    openPrompt(modal);
+
     // Set up search functionality
-    setupShareSearch(searchInput, resultsContainer, resultsStatus, onAdd, modal, modalShade, createElement);
+    setupShareSearch(searchInput, resultsContainer, resultsStatus, onAdd, modal, createElement);
     
     // Focus the search input
     setTimeout(() => searchInput.focus(), 100);
 }
 
 // Set up search functionality for the add share modal
-function setupShareSearch(searchInput, resultsContainer, resultsStatus, onAdd, modal, modalShade, createElement) {
+function setupShareSearch(searchInput, resultsContainer, resultsStatus, onAdd, modal, createElement) {
     let searchTimeout;
     let isSearching = false;
     
@@ -313,7 +303,7 @@ function setupShareSearch(searchInput, resultsContainer, resultsStatus, onAdd, m
                 resultsStatus.style.display = 'none';
                 
                 // Display results
-                displaySearchResults(userResults, resultsContainer, resultsStatus, onAdd, modal, modalShade, createElement);
+                displaySearchResults(userResults, resultsContainer, resultsStatus, onAdd, modal, createElement);
                 
             } catch (error) {
                 log('Search failed:', error);
@@ -343,7 +333,7 @@ function setupShareSearch(searchInput, resultsContainer, resultsStatus, onAdd, m
 }
 
 // Display search results in the modal
-function displaySearchResults(userResults, resultsContainer, resultsStatus, onAdd, modal, modalShade, createElement) {
+function displaySearchResults(userResults, resultsContainer, resultsStatus, onAdd, modal, createElement) {
     // Clear existing results (except status)
     clearSearchResults(resultsContainer, resultsStatus);
     
@@ -380,8 +370,7 @@ function displaySearchResults(userResults, resultsContainer, resultsStatus, onAd
         userCard.addEventListener('click', async () => {
             try {
                 await onAdd(user.id, user.name);
-                modal.remove();
-                modalShade.style.display = 'none';
+                closePrompt(modal);
             } catch (error) {
                 log('Failed to add share:', error);
                 // Error handling is done in the onAdd callback
