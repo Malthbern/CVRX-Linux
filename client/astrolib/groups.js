@@ -6,6 +6,7 @@ import { pushToast } from './toasty_notifications.js';
 import { applyTooltips } from './tooltip.js';
 import { createElement } from '../frontend.js';
 import { getCachedImage, setImageSource, friendsData } from './user_content.js';
+import { applyAutoFitFont } from './details_constructor.js';
 
 // Import shared log function or create local one
 let isPackaged = false;
@@ -945,6 +946,9 @@ export async function handleGroupsRefresh(groups) {
 
         const thumbnailContainer = groupNode.querySelector('.thumbnail-container');
         setImageSource(thumbnailContainer, group.imageHash, true);
+
+        // Auto-fit name to one line
+        applyAutoFitFont(groupNode.querySelector('.card-name'), { maxFontSize: 16, minFontSize: 10 });
 
         // Queue joined groups to resolve actual role
         if (group._ownership === 'joined' && currentUserId) {

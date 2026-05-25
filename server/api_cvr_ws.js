@@ -140,6 +140,123 @@ function Wait5Seconds() {
 }
 
 
+// Adaptive per-response-type coalescer. A reconnect storm can fan one WS
+// reconnect into a flurry of identical state messages, each of which triggers
+// renderer IPC, HTTP refetches, and image-cache work downstream. Under normal
+// load this passes messages straight through. When a single type crosses the
+// burst threshold, subsequent messages of that type are buffered and only the
+// latest payload is emitted on a fixed flush cadence, until the rate drops
+// back below threshold.
+//
+// Per-type rather than global because:
+//   - Bursts are dominated by snapshot-style messages (ONLINE_FRIENDS etc.)
+//     where keeping just the latest payload is acceptable.
+//   - Toast-style messages (MENU_POPUP, HUD_MESSAGE) are one-shot user
+//     messages and should never be dropped, so they're exempted.
+//
+// NOTE: ONLINE_FRIENDS / INVITES / REQUEST_INVITES / FRIEND_REQUESTS payloads
+// are partial snapshots — coalescing drops intermediate per-id updates during
+// a burst. That's an acceptable trade against crashing under load; if those
+// payloads ever become strict deltas, this needs revisiting.
+const COALESCE_WINDOW_MS = 1000;
+const COALESCE_THRESHOLD = 5;
+const COALESCE_FLUSH_MS = 200;
+
+const COALESCE_EXEMPT_TYPES = new Set([
+    RESPONSE_TYPE.MENU_POPUP,
+    RESPONSE_TYPE.HUD_MESSAGE,
+]);
+
+const coalesceState = new Map();
+
+function getCoalesceState(responseType) {
+    let state = coalesceState.get(responseType);
+    if (!state) {
+        state = {
+            timestamps: [],
+            pendingData: null,
+            pendingMessage: null,
+            flushTimer: null,
+            coalescing: false,
+        };
+        coalesceState.set(responseType, state);
+    }
+    return state;
+}
+
+function trimWindow(timestamps, now) {
+    while (timestamps.length > 0 && timestamps[0] < now - COALESCE_WINDOW_MS) {
+        timestamps.shift();
+    }
+}
+
+function flushCoalesce(responseType) {
+    const state = coalesceState.get(responseType);
+    if (!state) return;
+    state.flushTimer = null;
+
+    if (state.pendingData !== null || state.pendingMessage !== null) {
+        EventEmitter.emit(responseType, state.pendingData, state.pendingMessage);
+        state.pendingData = null;
+        state.pendingMessage = null;
+    }
+
+    trimWindow(state.timestamps, Date.now());
+
+    if (state.timestamps.length >= COALESCE_THRESHOLD) {
+        state.flushTimer = setTimeout(() => flushCoalesce(responseType), COALESCE_FLUSH_MS);
+    } else {
+        log.info(`[Coalesce] Disengaging for ${GetResponseTypeName(responseType)} (${responseType}) — rate fell below ${COALESCE_THRESHOLD}/${COALESCE_WINDOW_MS}ms`);
+        state.coalescing = false;
+    }
+}
+
+function dispatchMessage(responseType, processedData, message) {
+    // HTML-escape every string before fanning out to listeners — this is the
+    // WS-side chokepoint that mirrors the one in api_cvr_http.js. Anything
+    // downstream can render the data via innerHTML without worrying about
+    // smuggled markup.
+    const escapedData = Utils.EscapeHtml(processedData);
+    const escapedMessage = Utils.EscapeHtml(message);
+
+    if (COALESCE_EXEMPT_TYPES.has(responseType)) {
+        EventEmitter.emit(responseType, escapedData, escapedMessage);
+        return;
+    }
+
+    const state = getCoalesceState(responseType);
+    const now = Date.now();
+    state.timestamps.push(now);
+    trimWindow(state.timestamps, now);
+
+    if (!state.coalescing && state.timestamps.length >= COALESCE_THRESHOLD) {
+        state.coalescing = true;
+        log.warn(`[Coalesce] Engaging for ${GetResponseTypeName(responseType)} (${responseType}) — ${state.timestamps.length} events in ${COALESCE_WINDOW_MS}ms, will keep latest payload only every ${COALESCE_FLUSH_MS}ms`);
+    }
+
+    if (!state.coalescing) {
+        EventEmitter.emit(responseType, escapedData, escapedMessage);
+        return;
+    }
+
+    state.pendingData = escapedData;
+    state.pendingMessage = escapedMessage;
+    if (!state.flushTimer) {
+        state.flushTimer = setTimeout(() => flushCoalesce(responseType), COALESCE_FLUSH_MS);
+    }
+}
+
+function resetCoalesceState() {
+    for (const state of coalesceState.values()) {
+        if (state.flushTimer) {
+            clearTimeout(state.flushTimer);
+            state.flushTimer = null;
+        }
+    }
+    coalesceState.clear();
+}
+
+
 exports.ConnectWithCredentials = async (username, accessKey) => {
 
     // If we have a socket connected and the credentials changed, lets nuke it
@@ -283,6 +400,10 @@ function ConnectWebsocket(username, accessKey) {
         socket.on('close', async (code, reason) => {
             log.warn(`[ConnectWebsocket] [onClose] {${socket.uniqueId}} Closed! Code: ${code}, Reason: ${reason.toString()}`);
             previousSocket = null;
+            // Drop any buffered coalesced payloads — on reconnect we'll get a
+            // fresh snapshot anyway, and emitting stale data after the close
+            // would race with the new connection.
+            resetCoalesceState();
 
             // Only attempt to reconnect if the close code is one of the following:
             if (code === 1001 || code === 1005 || code === 1006) {
@@ -305,10 +426,9 @@ function ConnectWebsocket(username, accessKey) {
                 const { ResponseType: responseType, Message: message, Data: data } = JSON.parse(messageBuffer.toString());
                 if (Object.values(RESPONSE_TYPE).includes(responseType)) {
                     const processedData = preProcessEntities(responseType, data);
-                    // HTML-escape every string before fanning out to listeners — this is the WS-side
-                    // chokepoint that mirrors the one in api_cvr_http.js. Anything downstream can
-                    // render the data via innerHTML without worrying about smuggled markup.
-                    EventEmitter.emit(responseType, Utils.EscapeHtml(processedData), Utils.EscapeHtml(message));
+                    // dispatchMessage applies the HTML-escape that used to be inline
+                    // here, plus adaptive coalescing under burst load.
+                    dispatchMessage(responseType, processedData, message);
                     const logObj = { 'API Original Data': data, 'CVRX Processed Data': processedData };
                     log.debug(`[ConnectWebsocket] [onMessage] {${socket.uniqueId}} Type: ${GetResponseTypeName(responseType)} (${responseType}), Msg: ${message}`, logObj);
                 }

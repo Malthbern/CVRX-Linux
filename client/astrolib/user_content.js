@@ -5,6 +5,26 @@
 import { pushToast } from './toasty_notifications.js';
 import { applyTooltips } from './tooltip.js';
 import { createElement } from '../frontend.js';
+import { showFavouritesModal } from './favourites_modal.js';
+import { applyAutoFitFont } from './details_constructor.js';
+
+// Material Symbol that best represents each instance privacy / status label.
+// Falls back to a generic help icon for anything not in the table.
+function getInstanceTypeIcon(typeLabel) {
+    switch (typeLabel) {
+        case 'Public': return 'public';
+        case 'Friends of Friends': return 'groups';
+        case 'Friends Only': return 'group';
+        case 'Group': return 'diversity_3';
+        case 'Friends of Group': return 'workspaces';
+        case 'Group Public': return 'language';
+        case 'Everyone Can Invite': return 'forward_to_inbox';
+        case 'Owner Must Invite': return 'lock_person';
+        case 'Offline Instance': return 'wifi_off';
+        case 'Private Instance': return 'lock';
+        default: return 'help_outline';
+    }
+}
 
 // Import shared log function or create local one
 let isPackaged = false;
@@ -20,25 +40,38 @@ const log = (msg) => {
 // FRIENDS SECTION
 // ===============
 
-// Image cache for all image types (renamed from friendImageCache)
-export const imageCache = {};
+// Set of image hashes that the main process has confirmed are on disk and
+// therefore servable via the cvr-image:// protocol. Previously this map held
+// the full base64 string per image; that pinned hundreds of MB in the JS heap.
+export const readyImageHashes = new Set();
 
-// Helper function to get cached image or placeholder
+export function markImageReady(imageHash) {
+    if (imageHash) readyImageHashes.add(imageHash);
+}
+
+export function clearImageCache() {
+    readyImageHashes.clear();
+}
+
+// Helper function to get cached image URL or placeholder
 export function getCachedImage(imageHash) {
-    return imageCache[imageHash] || 'img/ui/placeholder.png';
+    if (imageHash && readyImageHashes.has(imageHash)) {
+        return `cvr-image://${imageHash}`;
+    }
+    return 'img/ui/placeholder.png';
 }
 
 // Helper function to set image source with cache check
 export function setImageSource(element, imageHash, isBackgroundImage = false) {
     const imageSrc = getCachedImage(imageHash);
-    
+
     if (isBackgroundImage) {
         element.style.backgroundImage = `url('${imageSrc}')`;
         element.style.backgroundSize = 'cover';
     } else {
         element.src = imageSrc;
     }
-    
+
     // Always set the hash for future updates
     element.dataset.hash = imageHash;
 }
@@ -305,11 +338,6 @@ export function handleFriendsRefresh(friends, isRefresh) {
         const instanceTypeStr = type ? `${type}` : '';
         const onlineFriendInPrivateClass = friend.instance ? '' : 'friend-is-offline';
 
-        // Use cached image if available, otherwise use placeholder
-        if (friend.imageBase64) {
-            // If we received the image with this update, cache it
-            imageCache[friend.imageHash] = friend.imageBase64;
-        }
         // Use cached image or fall back to placeholder
         const friendImgSrc = getCachedImage(friend.imageHash);
 
@@ -346,7 +374,7 @@ export function handleFriendsRefresh(friends, isRefresh) {
         // Setting up the HTMLElement used for the Friends List page.
         const offlineFriendClass = friend.isOnline ? '' : 'friend-is-offline';
 
-        // Status indicator
+        // Status indicator (top-left pill — the sole online/offline cue now)
         const statusIndicator = friend.isOnline
             ? '<div class="status-indicator"><span class="material-symbols-outlined">circle</span>Online</div>'
             : '<div class="status-indicator offline"><span class="material-symbols-outlined">circle</span>Offline</div>';
@@ -360,10 +388,29 @@ export function handleFriendsRefresh(friends, isRefresh) {
             </div>`;
         }
 
-        // World/instance icon
-        const worldIcon = friend.isOnline
-            ? '<span class="material-symbols-outlined">public</span>'
-            : '<span class="material-symbols-outlined">public_off</span>';
+        // Build stacked status rows. Type row covers privacy / instance state
+        // ("Public", "Private Instance", ...); world row names the world if any.
+        // For plain offline friends we hide both rows — the top-left status
+        // pill already conveys that.
+        const showWorldRow = name && name !== 'Offline';
+        const typeRowHtml = type
+            ? `<div class="friend-status-row friend-status-type-row">
+                   <span class="material-symbols-outlined">${getInstanceTypeIcon(type)}</span>
+                   <span>${type}</span>
+               </div>`
+            : '';
+        const worldRowHtml = showWorldRow
+            ? `<div class="friend-status-row friend-status-world-row">
+                   <span class="material-symbols-outlined">pin_drop</span>
+                   <span>${name}</span>
+               </div>`
+            : '';
+        const statusDetailsHtml = (typeRowHtml || worldRowHtml)
+            ? `<div class="friend-status-details ${offlineFriendClass}">${typeRowHtml}${worldRowHtml}</div>`
+            : '';
+
+        const currentCategories = friend.categories || [];
+        const isFavouritedClass = currentCategories.length > 0 ? ' active' : '';
 
         // Create the friend card with the same structure as search results
         let friendCard = createElement('div', {
@@ -373,11 +420,18 @@ export function handleFriendsRefresh(friends, isRefresh) {
                 <div class="thumbnail-container">
                     <img src="${friendImgSrc}" data-hash="${friend.imageHash}" class="hidden"/>
                     ${statusIndicator}
+                    <div class="card-quick-actions">
+                        <button type="button" class="card-quick-action notification-toggle" data-tooltip="Notifications off">
+                            <span class="material-symbols-outlined">notifications_off</span>
+                        </button>
+                        <button type="button" class="card-quick-action favourite-toggle${isFavouritedClass}" data-tooltip="Manage favourite categories">
+                            <span class="material-symbols-outlined">favorite</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="friend-content">
                     <p class="friend-name">${friend.name}</p>
-                    <p class="${offlineFriendClass} friend-status-type">${instanceTypeStr}</p>
-                    <p class="${offlineFriendClass} friend-status">${worldIcon} ${name}</p>
+                    ${statusDetailsHtml}
                 </div>
             `,
             onClick: () => ShowDetailsWrapper(DetailsType.User, friend.id),
@@ -387,11 +441,52 @@ export function handleFriendsRefresh(friends, isRefresh) {
         const thumbnailContainer = friendCard.querySelector('.thumbnail-container');
         setImageSource(thumbnailContainer, friend.imageHash, true);
 
+        // Auto-fit the friend name to one line: keeps the 16px max from the
+        // shared .friend-name rule, scales down for long names instead of wrapping.
+        applyAutoFitFont(friendCard.querySelector('.friend-name'), { maxFontSize: 16, minFontSize: 10 });
+
+        // Notification toggle — fetch initial state in the background, then
+        // mirror the details-page button's enabled/disabled visual state.
+        const notificationButton = friendCard.querySelector('.notification-toggle');
+        let notificationEnabled = false;
+        const renderNotificationState = () => {
+            notificationButton.querySelector('.material-symbols-outlined').textContent =
+                notificationEnabled ? 'notifications_active' : 'notifications_off';
+            notificationButton.classList.toggle('active', notificationEnabled);
+            notificationButton.dataset.tooltip = notificationEnabled ? 'Notifications on' : 'Notifications off';
+        };
+        window.API.isFriendNotificationEnabled(friend.id).then(enabled => {
+            notificationEnabled = enabled;
+            renderNotificationState();
+        }).catch(err => log(`Failed to read notification state for ${friend.id}: ${err}`));
+
+        notificationButton.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            try {
+                const newState = !notificationEnabled;
+                await window.API.setFriendNotification(friend.id, newState);
+                notificationEnabled = newState;
+                renderNotificationState();
+                pushToast(`Friend notifications ${newState ? 'enabled' : 'disabled'} for ${friend.name}`, 'confirm');
+            } catch (error) {
+                log(`Failed to toggle notification for ${friend.id}: ${error}`);
+                pushToast('Failed to update notification settings', 'error');
+            }
+        });
+
+        // Favourite quick-action — opens the same modal as the details page.
+        const favouriteButton = friendCard.querySelector('.favourite-toggle');
+        favouriteButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showFavouritesModal('user', friend.id, friend.name, currentCategories, createElement, refreshContentAfterFavoritesUpdate);
+        });
+
         friendCards.push(friendCard);
     }
 
     // Add all friend cards to the DOM at once
     friendsListNode.append(...friendCards);
+    applyTooltips();
 
     // After getting all friends statuses, populate the Friends Sidebar in order of Categories
     for (const key in categories) {
@@ -613,11 +708,18 @@ export function handleAvatarsRefresh(ourAvatars) {
         const imgSrc = getCachedImage(ourAvatar.imageHash);
 
         // Create card similar to search and friends layout
+        const avatarCategoryIds = ourAvatar.categories || [];
+        const avatarFavouritedClass = avatarCategoryIds.length > 0 ? ' active' : '';
         const avatarNode = createElement('div', {
             className: 'avatars-wrapper--avatars-node card-node',
             innerHTML: `
                 <div class="thumbnail-container">
                     <img src="${imgSrc}" data-hash="${ourAvatar.imageHash}" class="hidden"/>
+                    <div class="card-quick-actions">
+                        <button type="button" class="card-quick-action favourite-toggle${avatarFavouritedClass}" data-tooltip="Manage favourite categories">
+                            <span class="material-symbols-outlined">favorite</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="card-content">
                     <p class="card-name">${ourAvatar.name}</p>
@@ -632,6 +734,16 @@ export function handleAvatarsRefresh(ourAvatars) {
         // Set placeholder background image and data-hash directly on the container
         const thumbnailContainer = avatarNode.querySelector('.thumbnail-container');
         setImageSource(thumbnailContainer, ourAvatar.imageHash, true);
+
+        // Wire favourite quick-action
+        const avatarFavouriteButton = avatarNode.querySelector('.favourite-toggle');
+        avatarFavouriteButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showFavouritesModal('avatar', ourAvatar.id, ourAvatar.name, avatarCategoryIds, createElement, refreshContentAfterFavoritesUpdate);
+        });
+
+        // Auto-fit name to one line
+        applyAutoFitFont(avatarNode.querySelector('.card-name'), { maxFontSize: 16, minFontSize: 10 });
 
         docFragment.appendChild(avatarNode);
     }
@@ -911,12 +1023,19 @@ export function handleWorldsRefresh(ourWorlds) {
             </div>` : '';
 
         // Create card similar to search and friends layout
+        const worldCategoryIds = ourWorld.categories || [];
+        const worldFavouritedClass = worldCategoryIds.length > 0 ? ' active' : '';
         const worldNode = createElement('div', {
             className: 'worlds-wrapper--worlds-node card-node',
             innerHTML: `
                 ${playerCount}
                 <div class="thumbnail-container">
                     <img src="${imgSrc}" data-hash="${ourWorld.imageHash}" class="hidden"/>
+                    <div class="card-quick-actions">
+                        <button type="button" class="card-quick-action favourite-toggle${worldFavouritedClass}" data-tooltip="Manage favourite categories">
+                            <span class="material-symbols-outlined">favorite</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="card-content">
                     <p class="card-name">${ourWorld.name}</p>
@@ -931,6 +1050,16 @@ export function handleWorldsRefresh(ourWorlds) {
         // Set placeholder background image and data-hash directly on the container
         const thumbnailContainer = worldNode.querySelector('.thumbnail-container');
         setImageSource(thumbnailContainer, ourWorld.imageHash, true);
+
+        // Wire favourite quick-action
+        const worldFavouriteButton = worldNode.querySelector('.favourite-toggle');
+        worldFavouriteButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showFavouritesModal('world', ourWorld.id, ourWorld.name, worldCategoryIds, createElement, refreshContentAfterFavoritesUpdate);
+        });
+
+        // Auto-fit name to one line
+        applyAutoFitFont(worldNode.querySelector('.card-name'), { maxFontSize: 16, minFontSize: 10 });
 
         docFragment.appendChild(worldNode);
     }
@@ -1281,11 +1410,18 @@ export function handlePropsRefresh(ourProps) {
         const imgSrc = getCachedImage(ourProp.imageHash);
 
         // Create card similar to search and friends layout
+        const propCategoryIds = ourProp.categories || [];
+        const propFavouritedClass = propCategoryIds.length > 0 ? ' active' : '';
         const propNode = createElement('div', {
             className: 'props-wrapper--props-node card-node',
             innerHTML: `
                 <div class="thumbnail-container">
                     <img src="${imgSrc}" data-hash="${ourProp.imageHash}" class="hidden"/>
+                    <div class="card-quick-actions">
+                        <button type="button" class="card-quick-action favourite-toggle${propFavouritedClass}" data-tooltip="Manage favourite categories">
+                            <span class="material-symbols-outlined">favorite</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="card-content">
                     <p class="card-name">${ourProp.name}</p>
@@ -1300,6 +1436,16 @@ export function handlePropsRefresh(ourProps) {
         // Set placeholder background image and data-hash directly on the container
         const thumbnailContainer = propNode.querySelector('.thumbnail-container');
         setImageSource(thumbnailContainer, ourProp.imageHash, true);
+
+        // Wire favourite quick-action
+        const propFavouriteButton = propNode.querySelector('.favourite-toggle');
+        propFavouriteButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showFavouritesModal('prop', ourProp.id, ourProp.name, propCategoryIds, createElement, refreshContentAfterFavoritesUpdate);
+        });
+
+        // Auto-fit name to one line
+        applyAutoFitFont(propNode.querySelector('.card-name'), { maxFontSize: 16, minFontSize: 10 });
 
         docFragment.appendChild(propNode);
     }
@@ -1408,7 +1554,7 @@ export function resetUserContentCache() {
     Object.keys(propsData).forEach(key => delete propsData[key]);
     
     // Clear friend image cache
-    Object.keys(imageCache).forEach(key => delete imageCache[key]);
+    clearImageCache();
     
     // Clear friend categories
     friendCategories = [];

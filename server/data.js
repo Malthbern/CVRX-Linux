@@ -58,6 +58,32 @@ const ActivityUpdatesType = Object.freeze({
     InviteRequests: 'inviteRequests',
 });
 
+// The CVR API reports world swaps as two events: A -> Offline Instance, then
+// Offline Instance -> B. We defer surfacing the first one and collapse the
+// pair into a single A -> B entry if the follow-up arrives within this window.
+// The genuine "user went fully offline" signal lags ~120s, so a 10s window is
+// well clear of it while comfortably covering observed swap durations.
+const OFFLINE_INSTANCE_TRANSITION_DEFER_MS = 10000;
+
+const isOfflineInstanceState = (state) => !!(state && state.isOnline === true && state.isConnected === false);
+
+// Two states are "logically the same instance" if a user moving between them
+// would not be considered to have moved. Used to swallow blip events
+// (A -> Offline Instance -> A) when they resolve back to the originating
+// instance — otherwise the activity feed would log a noisy "A -> A" entry.
+// Treats both-Private as same: a Private blip resolves back to the same
+// private instance, and the API doesn't expose an id to distinguish them.
+const isSameLogicalInstance = (a, b) => {
+    if (!a || !b) return false;
+    if (!!a.isOnline !== !!b.isOnline) return false;
+    if (!a.isOnline) return true; // both fully offline
+    if (!!a.isConnected !== !!b.isConnected) return false;
+    if (!a.isConnected) return true; // both in (an) offline instance
+    const aId = a.instance ? a.instance.id : null;
+    const bId = b.instance ? b.instance.id : null;
+    return aId === bId;
+};
+
 function IsObjectEqualExcept(obj1, obj2, keysToIgnore) {
     return JSON.stringify(obj1, (key, value) => keysToIgnore.includes(key) ? undefined : value) ===
     JSON.stringify(obj2, (key, value) => keysToIgnore.includes(key) ? undefined : value);
@@ -142,6 +168,8 @@ class Core {
             [ActivityUpdatesType.InviteRequests]: {},
         };
         this.recentActivityInitialFriends = false;
+        // friendId -> { previousOriginal, current, timestamp, timer }
+        this.pendingOfflineInstanceTransitions = {};
 
         this.activeInstancesDetails = {};
 
@@ -698,13 +726,9 @@ class Core {
         }
         catch (e) {
             log.error('[Authenticate] Error while authentication or initial requests...', e.toString(), e.message?.toString());
-            await dialog.showErrorBox(
-                'Authentication/Initial Requests failed',
-                'Something went wrong during CVRX Startup. Make sure you have an internet connection.' +
-                '\nThe current user will be logged out and the application will quit!\n' + e.toString(),
-            );
             await Config.ClearActiveCredentials();
-            this.app.quit();
+            await this.SendToLoginPage();
+            this.SendToRenderer('auth-error', e.toString());
         }
         // const authentication = {
         //     username: 'XXXXXXXXX',
@@ -840,6 +864,11 @@ class Core {
                 if (this.recentActivityInitialFriends) {
                     this.recentActivityInitialFriends = false;
                     this.recentActivityCache[ActivityUpdatesType.Friends] = {};
+                    // Drop any deferred offline-instance transitions left over from the previous session.
+                    for (const pending of Object.values(this.pendingOfflineInstanceTransitions)) {
+                        clearTimeout(pending.timer);
+                    }
+                    this.pendingOfflineInstanceTransitions = {};
                     isInitial = true;
                 }
 
@@ -866,8 +895,46 @@ class Core {
 
                     const previous = this.recentActivityCache[friendUpdate.id] ?? null;
 
+                    // Resolve a pending offline-instance defer BEFORE the duplicate-state filter.
+                    // During a defer we deliberately freeze the cache at the pre-transition state,
+                    // so a blip resolution (A -> Offline Instance -> A) arrives byte-equal to the
+                    // cache and would otherwise be swallowed silently, leaving the timer to flush
+                    // a stale "A -> Offline Instance" entry.
+                    const pending = this.pendingOfflineInstanceTransitions[friendUpdate.id];
+                    if (pending) {
+                        if (isOfflineInstanceState(current)) {
+                            // Still in an offline instance — refresh the deferred current and
+                            // restart the timer; keep the original "previous" so a later
+                            // resolution still points back to the world they came from.
+                            clearTimeout(pending.timer);
+                            pending.current = current;
+                            pending.timer = setTimeout(
+                                () => this.flushPendingOfflineInstanceTransition(friendUpdate.id),
+                                OFFLINE_INSTANCE_TRANSITION_DEFER_MS,
+                            );
+                            continue;
+                        }
+                        // Moved out of the offline instance within the window — collapse the
+                        // A -> Offline Instance -> B pair into a single A -> B entry. If the
+                        // resolved state is the same instance they came from (a blip), drop
+                        // the entry entirely rather than logging a useless "A -> A".
+                        clearTimeout(pending.timer);
+                        const previousOriginal = pending.previousOriginal;
+                        delete this.pendingOfflineInstanceTransitions[friendUpdate.id];
+                        if (!isSameLogicalInstance(previousOriginal, current)) {
+                            this.recentActivity.unshift({
+                                timestamp: Date.now(),
+                                type: ActivityUpdatesType.Friends,
+                                current: current,
+                                previous: previousOriginal,
+                            });
+                        }
+                        this.recentActivityCache[friendUpdate.id] = current;
+                        continue;
+                    }
+
                     // Ignore updates if they are the same as the previous state
-                    if (IsObjectEqualExcept(current, previous, ['imageBase64'])) continue;
+                    if (IsObjectEqualExcept(current, previous, [])) continue;
 
                     // Log friend update for debugging
                     log.info(`[FriendNotification] Processing friend update for ID: ${friendUpdate.id}`);
@@ -954,6 +1021,22 @@ class Core {
                         }
                     }
 
+                    if (isOfflineInstanceState(current) && !isOfflineInstanceState(previous)) {
+                        // Entering an offline instance — defer surfacing this. If a follow-up
+                        // resolves it within the window we'll collapse; otherwise the timer
+                        // flushes it as a genuine offline-instance entry.
+                        this.pendingOfflineInstanceTransitions[friendUpdate.id] = {
+                            previousOriginal: previous,
+                            current: current,
+                            timestamp: Date.now(),
+                            timer: setTimeout(
+                                () => this.flushPendingOfflineInstanceTransition(friendUpdate.id),
+                                OFFLINE_INSTANCE_TRANSITION_DEFER_MS,
+                            ),
+                        };
+                        continue;
+                    }
+
                     this.recentActivity.unshift({
                         timestamp: Date.now(),
                         type: ActivityUpdatesType.Friends,
@@ -1002,6 +1085,26 @@ class Core {
         this.recentActivity = this.recentActivity.slice(0, maxCount);
 
         // Send recent activities update to the view
+        this.SendToRenderer('recent-activity-update', this.recentActivity);
+    }
+
+    flushPendingOfflineInstanceTransition(friendId) {
+        const pending = this.pendingOfflineInstanceTransitions[friendId];
+        if (!pending) return;
+        delete this.pendingOfflineInstanceTransitions[friendId];
+
+        // Use the original transition timestamp so the entry appears at the time
+        // it actually happened, not when the defer window expired.
+        this.recentActivity.unshift({
+            timestamp: pending.timestamp,
+            type: ActivityUpdatesType.Friends,
+            current: pending.current,
+            previous: pending.previousOriginal,
+        });
+        this.recentActivityCache[friendId] = pending.current;
+
+        const maxCount = Config.GetRecentActivityMaxCount();
+        this.recentActivity = this.recentActivity.slice(0, maxCount);
         this.SendToRenderer('recent-activity-update', this.recentActivity);
     }
 

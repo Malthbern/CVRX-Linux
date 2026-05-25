@@ -4,6 +4,7 @@
 
 import { pushToast } from './toasty_notifications.js';
 import { applyTooltips } from './tooltip.js';
+import { openPrompt, closePrompt } from '../frontend.js';
 
 // Logging function to prevent memory leaking when bundled
 let isPackaged = false;
@@ -155,14 +156,13 @@ function handleDrop(e) {
 // ===========
 
 function showUnsavedChangesModal(callback) {
-    const promptShade = document.querySelector('.prompt-layer');
     const prompt = document.createElement('div');
     prompt.className = 'prompt';
-    
+
     prompt.innerHTML = `
         <div class="prompt-title">Unsaved Changes</div>
         <div class="prompt-text">
-            You have unsaved changes to the advanced avatar settings. 
+            You have unsaved changes to the advanced avatar settings.
             What would you like to do?
         </div>
         <div class="prompt-buttons">
@@ -171,38 +171,33 @@ function showUnsavedChangesModal(callback) {
             <button class="prompt-btn-neutral" data-action="cancel">Cancel</button>
         </div>
     `;
-    
+
     // Add event listeners
     prompt.querySelector('[data-action="save"]').addEventListener('click', async () => {
         try {
             await saveSettings();
-            prompt.remove();
-            promptShade.style.display = 'none';
+            closePrompt(prompt);
             if (callback) callback(true);
         } catch (error) {
             pushToast('Failed to save settings', 'error');
         }
     });
-    
+
     prompt.querySelector('[data-action="discard"]').addEventListener('click', () => {
         revertSettings();
-        prompt.remove();
-        promptShade.style.display = 'none';
+        closePrompt(prompt);
         if (callback) callback(true);
     });
-    
+
     prompt.querySelector('[data-action="cancel"]').addEventListener('click', () => {
-        prompt.remove();
-        promptShade.style.display = 'none';
+        closePrompt(prompt);
         if (callback) callback(false);
     });
-    
-    promptShade.appendChild(prompt);
-    promptShade.style.display = 'flex';
+
+    openPrompt(prompt);
 }
 
 function showTransferParametersModal(sourceProfileIndex, selectedParameterIndices, onTransfer) {
-    const promptShade = document.querySelector('.prompt-layer');
     const modal = document.createElement('div');
     modal.className = 'prompt transfer-parameters-modal';
     
@@ -275,27 +270,22 @@ function showTransferParametersModal(sourceProfileIndex, selectedParameterIndice
         const selectedProfileIndices = Array.from(checkboxes)
             .filter(cb => cb.checked)
             .map(cb => parseInt(cb.value));
-        
+
         if (selectedProfileIndices.length === 0) {
             pushToast('Please select at least one profile to transfer to', 'error');
             return;
         }
-        
-        modal.remove();
-        promptShade.style.display = 'none';
-        
+
+        closePrompt(modal);
+
         if (onTransfer) {
             onTransfer(selectedProfileIndices);
         }
     });
-    
-    cancelBtn.addEventListener('click', () => {
-        modal.remove();
-        promptShade.style.display = 'none';
-    });
-    
-    promptShade.appendChild(modal);
-    promptShade.style.display = 'flex';
+
+    cancelBtn.addEventListener('click', () => closePrompt(modal));
+
+    openPrompt(modal);
 }
 
 // ===========
@@ -327,10 +317,9 @@ function deleteProfile(index) {
     const isDefault = profile.profileName === currentSettings.defaultProfileName;
     
     // Show confirmation dialog
-    const confirmShade = document.querySelector('.prompt-layer');
     const confirmPrompt = document.createElement('div');
     confirmPrompt.className = 'prompt';
-    
+
     confirmPrompt.innerHTML = `
         <div class="prompt-title">Delete Profile</div>
         <div class="prompt-text">
@@ -343,41 +332,36 @@ function deleteProfile(index) {
             <button class="prompt-btn-neutral" data-action="cancel">Cancel</button>
         </div>
     `;
-    
+
     // Add event listeners
     confirmPrompt.querySelector('[data-action="delete"]').addEventListener('click', () => {
         // Remove the profile
         currentSettings.savedSettings.splice(index, 1);
-        
+
         // If this was the default profile, set a new default
         if (isDefault && currentSettings.savedSettings.length > 0) {
             currentSettings.defaultProfileName = currentSettings.savedSettings[0].profileName;
         } else if (currentSettings.savedSettings.length === 0) {
             currentSettings.defaultProfileName = '';
         }
-        
+
         markAsModified();
         renderProfiles();
-        
+
         // Select first profile if available, otherwise show empty state
         if (currentSettings.savedSettings.length > 0) {
             selectProfile(0);
         } else {
             renderParameters(-1);
         }
-        
-        confirmPrompt.remove();
-        confirmShade.style.display = 'none';
+
+        closePrompt(confirmPrompt);
         pushToast('Profile deleted', 'confirm');
     });
-    
-    confirmPrompt.querySelector('[data-action="cancel"]').addEventListener('click', () => {
-        confirmPrompt.remove();
-        confirmShade.style.display = 'none';
-    });
-    
-    confirmShade.appendChild(confirmPrompt);
-    confirmShade.style.display = 'flex';
+
+    confirmPrompt.querySelector('[data-action="cancel"]').addEventListener('click', () => closePrompt(confirmPrompt));
+
+    openPrompt(confirmPrompt);
 }
 
 function addNewProfile() {
@@ -431,10 +415,9 @@ function addParameter(profileIndex) {
     if (!profile) return;
     
     // Show input dialog for parameter name
-    const promptShade = document.querySelector('.prompt-layer');
     const prompt = document.createElement('div');
     prompt.className = 'prompt';
-    
+
     prompt.innerHTML = `
         <div class="prompt-title">Add Parameter</div>
         <div class="prompt-text">
@@ -472,26 +455,21 @@ function addParameter(profileIndex) {
         
         markAsModified();
         renderParameters(profileIndex);
-        
-        prompt.remove();
-        promptShade.style.display = 'none';
+
+        closePrompt(prompt);
         pushToast(`Parameter "${paramName}" added`, 'confirm');
     });
-    
-    prompt.querySelector('.prompt-btn-neutral').addEventListener('click', () => {
-        prompt.remove();
-        promptShade.style.display = 'none';
-    });
-    
+
+    prompt.querySelector('.prompt-btn-neutral').addEventListener('click', () => closePrompt(prompt));
+
     nameInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             prompt.querySelector('.prompt-btn-confirm').click();
         }
     });
-    
-    promptShade.appendChild(prompt);
-    promptShade.style.display = 'flex';
-    
+
+    openPrompt(prompt);
+
     // Focus the input
     setTimeout(() => nameInput.focus(), 100);
 }
@@ -580,10 +558,9 @@ function deleteSelectedParameters(profileIndex) {
     const paramNames = indicesToDelete.map(index => profile.values[index].name);
     
     // Show confirmation dialog
-    const confirmShade = document.querySelector('.prompt-layer');
     const confirmPrompt = document.createElement('div');
     confirmPrompt.className = 'prompt';
-    
+
     const paramCountText = indicesToDelete.length === 1 ? 'parameter' : 'parameters';
     const paramListText = paramNames.length <= 3 
         ? paramNames.map(name => `"${name}"`).join(', ')
@@ -615,22 +592,17 @@ function deleteSelectedParameters(profileIndex) {
         
         markAsModified();
         renderParameters(profileIndex);
-        
-        confirmPrompt.remove();
-        confirmShade.style.display = 'none';
-        
+
+        closePrompt(confirmPrompt);
+
         const deletedCount = indicesToDelete.length;
         const message = deletedCount === 1 ? 'Parameter deleted' : `${deletedCount} parameters deleted`;
         pushToast(message, 'confirm');
     });
-    
-    confirmPrompt.querySelector('[data-action="cancel"]').addEventListener('click', () => {
-        confirmPrompt.remove();
-        confirmShade.style.display = 'none';
-    });
-    
-    confirmShade.appendChild(confirmPrompt);
-    confirmShade.style.display = 'flex';
+
+    confirmPrompt.querySelector('[data-action="cancel"]').addEventListener('click', () => closePrompt(confirmPrompt));
+
+    openPrompt(confirmPrompt);
 }
 
 function transferSelectedParameters(sourceProfileIndex) {
@@ -1068,7 +1040,6 @@ function renderParameters(profileIndex) {
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 // Confirm before deleting
-                const confirmShade = document.querySelector('.prompt-layer');
                 const confirmPrompt = document.createElement('div');
                 confirmPrompt.className = 'prompt';
                 confirmPrompt.innerHTML = `
@@ -1086,16 +1057,11 @@ function renderParameters(profileIndex) {
                     profile.values.splice(paramIndex, 1);
                     markAsModified();
                     renderParameters(profileIndex);
-                    confirmPrompt.remove();
-                    confirmShade.style.display = 'none';
+                    closePrompt(confirmPrompt);
                     pushToast(`Parameter "${param.name}" deleted`, 'confirm');
                 });
-                confirmPrompt.querySelector('[data-action="cancel"]').addEventListener('click', () => {
-                    confirmPrompt.remove();
-                    confirmShade.style.display = 'none';
-                });
-                confirmShade.appendChild(confirmPrompt);
-                confirmShade.style.display = 'flex';
+                confirmPrompt.querySelector('[data-action="cancel"]').addEventListener('click', () => closePrompt(confirmPrompt));
+                openPrompt(confirmPrompt);
             });
         }
 

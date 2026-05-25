@@ -1304,11 +1304,6 @@ button {
     flex-shrink: 0; /* Prevent the container from shrinking */
 }
 
-.friend-list-node:hover .thumbnail-container,
-.card-node:hover .thumbnail-container {
-    transform: scale(1.05);
-}
-
 .friend-list-node .thumbnail-container::after,
 .card-node .thumbnail-container::after {
     content: '';
@@ -1358,35 +1353,104 @@ button {
     text-decoration: underline;
 }
 
-.friend-status-type {
-    font-size: small;
-    color: rgba(255, 255, 255, 0.5);
-    margin-bottom: 5px;
-    font-weight: 400;
+/* Override the shared .friend-name / .card-name multi-line clamp so
+   applyAutoFitFont can measure and scale a single line cleanly. Without this
+   the -webkit-box display + line-clamp confuse measurement and the element
+   can overflow its flex parent. */
+.friend-list-node .friend-name,
+.card-node .card-name {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+    -webkit-box-orient: unset;
+    max-height: none;
+    max-width: 100%;
+    min-width: 0;
+    white-space: nowrap;
+    word-break: normal;
 }
 
-.friend-status {
-    font-size: 12px;
-    font-style: italic;
-    color: rgba(255, 255, 255, 0.7);
-    margin-top: auto;
+.friend-status-details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+}
+
+.friend-status-row {
     display: flex;
     align-items: center;
-    padding: 5px 0;
-    line-height: 1.2;
+    gap: 6px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.75);
     background-color: rgba(0, 0, 0, 0.15);
     border-radius: 4px;
     padding: 4px 8px;
-    margin-top: 5px;
+    line-height: 1.2;
     overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.friend-status .material-symbols-outlined {
+.friend-status-row .material-symbols-outlined {
     font-size: 14px;
-    margin-right: 6px;
     opacity: 0.8;
+    flex-shrink: 0;
+}
+
+.friend-status-row > span:not(.material-symbols-outlined) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.friend-status-row.friend-status-type-row {
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 500;
+}
+
+.friend-status-row.friend-status-world-row {
+    font-style: italic;
+}
+
+.card-quick-actions {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    display: flex;
+    gap: 6px;
+    z-index: 2;
+}
+
+.card-quick-action {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background-color: rgba(0, 0, 0, 0.65);
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.card-quick-action:hover {
+    background-color: rgba(0, 0, 0, 0.85);
+    transform: scale(1.08);
+}
+
+.card-quick-action .material-symbols-outlined {
+    font-size: 18px;
+}
+
+.card-quick-action.notification-toggle.active {
+    color: #4caf50;
+}
+
+.card-quick-action.favourite-toggle.active {
+    color: #f06292;
 }
 
 .friend-list-node::before {
@@ -1474,6 +1538,51 @@ button {
     border-radius: var(--border-radii);
     min-height: 60px;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.friend-history-node--body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+}
+
+.friend-history-node--header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.friend-history-node--timestamp {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    white-space: nowrap;
+}
+
+.friend-status-history--arrow {
+    font-size: 14px !important;
+    color: rgba(255, 255, 255, 0.6);
+    flex-shrink: 0;
+}
+
+.friend-status-history--prev {
+    font-style: italic;
+    filter: brightness(0.5);
+}
+
+.history-world-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .friend-history-node:nth-of-type(odd) {
@@ -1530,20 +1639,14 @@ button {
     font-style: italic;
 }
 
-.old-history {
-    font-style: italic;
-    filter: brightness(0.5);
-}
-
 .filtered-item {
     display: none;
 }
 
 .friend-history-node :is(img) {
-    float: left;
+    flex-shrink: 0;
     height: var(--thumbnail-size-standard);
     width: var(--thumbnail-size-standard);
-    margin-right: 5px;
     border-radius: var(--border-radii);
 }
 
@@ -1557,12 +1660,15 @@ button {
     font-size: 18px;
 }
 
-.friend-history-node:hover .friend-name-history {
-    text-decoration: underline;
+.friend-name-history {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
-.friend-name-history small {
-    font-size: 10px;
+.friend-history-node:hover .friend-name-history {
+    text-decoration: underline;
 }
 
 .friend-list-node:hover .friend-name {
@@ -1575,15 +1681,21 @@ button {
 
 .friend-status-history {
     font-size: 12px;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    min-width: 0;
 }
 
 .history-type {
     font-weight: bold;
     font-size: x-small !important;
+    flex-shrink: 0;
 }
 
 .history-type-prev {
     font-size: x-small !important;
+    flex-shrink: 0;
 }
 
 .friend-is-offline {
@@ -3634,6 +3746,20 @@ button {
     padding-left: 1.25rem;
 }
 
+.auth-error-detail {
+    margin: 0.5rem 0 0 0;
+    padding: 0.5rem;
+    background: var(--color-background);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 12rem;
+    overflow-y: auto;
+}
+
 .prompt-text li {
     margin: 0.15rem 0;
 }
@@ -5405,7 +5531,7 @@ button {
     color: var(--color-text);
     margin: 0;
     line-height: 1.2;
-    word-break: break-word;
+    max-width: 100%;
 }
 
 .user-details-pronouns {

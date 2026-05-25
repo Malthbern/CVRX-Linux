@@ -16,6 +16,7 @@ import {
 import { showFavouritesModal } from './favourites_modal.js';
 import { refreshContentAfterFavoritesUpdate } from './user_content.js';
 import { showGroupDetails } from './groups.js';
+import { openPrompt, closePrompt } from '../frontend.js';
 
 // Logging function to prevent memory leaking when bundled
 let isPackaged = false;
@@ -38,6 +39,50 @@ const DetailsType = Object.freeze({
     World: Symbol('world'),
     Instance: Symbol('instance'),
 });
+
+// Single-line auto-fit: keep the element at maxFontSize when it fits, scale
+// down proportionally otherwise. Floors at minFontSize so very long names stay
+// readable. Re-measures when the parent resizes (e.g. window resize).
+// When measureSelf is true, compares the element's own clientWidth (use this
+// when the element doesn't fill its parent — e.g. it's a flex sibling).
+export function applyAutoFitFont(element, { maxFontSize = 24, minFontSize = 12, measureSelf = false } = {}) {
+    element.style.whiteSpace = 'nowrap';
+
+    let observer = null;
+    let rafHandle = null;
+
+    const measure = () => {
+        rafHandle = null;
+        const parent = element.parentElement;
+        if (!parent) return;
+
+        if (!element.isConnected) {
+            if (observer) { observer.disconnect(); observer = null; }
+            return;
+        }
+
+        // Reset to the ceiling first so we re-evaluate from scratch each pass.
+        element.style.fontSize = `${maxFontSize}px`;
+        const available = measureSelf ? element.clientWidth : parent.clientWidth;
+        const natural = element.scrollWidth;
+        if (available > 0 && natural > available) {
+            const scaled = (available / natural) * maxFontSize;
+            element.style.fontSize = `${Math.max(minFontSize, scaled)}px`;
+        }
+
+        if (!observer && typeof ResizeObserver !== 'undefined') {
+            observer = new ResizeObserver(schedule);
+            observer.observe(parent);
+        }
+    };
+
+    const schedule = () => {
+        if (rafHandle !== null) return;
+        rafHandle = requestAnimationFrame(measure);
+    };
+
+    schedule();
+}
 
 // ===========
 // HELPER FUNCTIONS
@@ -275,11 +320,12 @@ function createDetailsHeaderStructure(entityInfo, entityType, entityId) {
     const entityName = document.createElement('h1');
     entityName.className = 'details-entity-name';
     entityName.textContent = decodeHtmlEntities(entityInfo.name) || 'Unknown';
-    
+
     // Add thumbnail and name to main info
     mainInfo.appendChild(thumbnailContainer);
     mainInfo.appendChild(entityName);
-    
+    applyAutoFitFont(entityName);
+
     // Create segments container
     const segmentsContainer = document.createElement('div');
     segmentsContainer.className = 'details-segments-container';
@@ -712,10 +758,11 @@ function createUserDetailsHeader(entityInfo, ShowDetailsCallback, entityId, isMy
     const entityName = document.createElement('h1');
     entityName.className = 'details-entity-name';
     entityName.textContent = decodeHtmlEntities(entityInfo.name) || 'Unknown User';
-    
+
     // Add thumbnail and name to main info
     mainInfo.appendChild(thumbnailContainer);
     mainInfo.appendChild(entityName);
+    applyAutoFitFont(entityName);
 
     // Pronouns row (shown for self always; for others only when set)
     const initialPronouns = decodeHtmlEntities(entityInfo.profilePronouns) || '';
@@ -1007,7 +1054,6 @@ async function ShowDetails(entityType, entityId, dependencies) {
                     onClick: async () => {
                         if (entityInfo.isFriend) {
                             // Show confirmation dialog
-                            const confirmShade = document.querySelector('.prompt-layer');
                             const confirmPrompt = createElement('div', { className: 'prompt' });
                             const confirmTitle = createElement('div', { className: 'prompt-title', textContent: 'Remove Friend' });
                             const confirmText = createElement('div', {
@@ -1023,8 +1069,7 @@ async function ShowDetails(entityType, entityId, dependencies) {
                                     try {
                                         await windowAPI.unfriend(entityId);
                                         pushToast(`Removed ${entityInfo.name} from friends`, 'confirm');
-                                        confirmPrompt.remove();
-                                        confirmShade.style.display = 'none';
+                                        closePrompt(confirmPrompt);
                                         // Remove the button since they are no longer friends
                                         friendActionButton.remove();
                                     } catch (error) {
@@ -1036,16 +1081,12 @@ async function ShowDetails(entityType, entityId, dependencies) {
                             const cancelButton = createElement('button', {
                                 className: 'prompt-btn-neutral',
                                 textContent: 'Cancel',
-                                onClick: () => {
-                                    confirmPrompt.remove();
-                                    confirmShade.style.display = 'none';
-                                },
+                                onClick: () => closePrompt(confirmPrompt),
                             });
 
                             confirmButtons.append(confirmButton, cancelButton);
                             confirmPrompt.append(confirmTitle, confirmText, confirmButtons);
-                            confirmShade.append(confirmPrompt);
-                            confirmShade.style.display = 'flex';
+                            openPrompt(confirmPrompt);
                         } else {
                             try {
                                 await windowAPI.sendFriendRequest(entityId);
@@ -1239,7 +1280,6 @@ async function ShowDetails(entityType, entityId, dependencies) {
                             }
                         } else {
                             // Show confirmation dialog
-                            const confirmShade = document.querySelector('.prompt-layer');
                             const confirmPrompt = createElement('div', { className: 'prompt' });
                             const confirmTitle = createElement('div', { className: 'prompt-title', textContent: 'Block User' });
                             const confirmText = createElement('div', {
@@ -1258,8 +1298,7 @@ async function ShowDetails(entityType, entityId, dependencies) {
                                         blockButton.innerHTML = `<span class="material-symbols-outlined">block</span>Unblock User`;
 
                                         entityInfo.isBlocked = true;
-                                        confirmPrompt.remove();
-                                        confirmShade.style.display = 'none';
+                                        closePrompt(confirmPrompt);
                                     } catch (error) {
                                         pushToast('Failed to block user', 'error');
                                     }
@@ -1269,16 +1308,12 @@ async function ShowDetails(entityType, entityId, dependencies) {
                             const cancelButton = createElement('button', {
                                 className: 'prompt-btn-neutral',
                                 textContent: 'Cancel',
-                                onClick: () => {
-                                    confirmPrompt.remove();
-                                    confirmShade.style.display = 'none';
-                                },
+                                onClick: () => closePrompt(confirmPrompt),
                             });
 
                             confirmButtons.append(confirmButton, cancelButton);
                             confirmPrompt.append(confirmTitle, confirmText, confirmButtons);
-                            confirmShade.append(confirmPrompt);
-                            confirmShade.style.display = 'flex';
+                            openPrompt(confirmPrompt);
                         }
                     },
                 });
@@ -1500,7 +1535,6 @@ async function ShowDetails(entityType, entityId, dependencies) {
                         // Check if ChilloutVR is running and show warning modal if it is
                         if (isChilloutVRRunning) {
                             // Show warning modal
-                            const confirmShade = document.querySelector('.prompt-layer');
                             const confirmPrompt = createElement('div', { className: 'prompt' });
                             const confirmTitle = createElement('div', { className: 'prompt-title', textContent: 'Switch Avatar While Game Running' });
                             const confirmText = createElement('div', {
@@ -1516,8 +1550,7 @@ async function ShowDetails(entityType, entityId, dependencies) {
                                     try {
                                         await windowAPI.setCurrentAvatar(entityId);
                                         pushToast(`Switched to "${entityInfo.name}"`, 'confirm');
-                                        confirmPrompt.remove();
-                                        confirmShade.style.display = 'none';
+                                        closePrompt(confirmPrompt);
                                     } catch (error) {
                                         log('Failed to switch avatar:');
                                         pushToast('Failed to switch avatar', 'error');
@@ -1528,16 +1561,12 @@ async function ShowDetails(entityType, entityId, dependencies) {
                             const cancelButton = createElement('button', {
                                 className: 'prompt-btn-neutral',
                                 textContent: 'Cancel',
-                                onClick: () => {
-                                    confirmPrompt.remove();
-                                    confirmShade.style.display = 'none';
-                                },
+                                onClick: () => closePrompt(confirmPrompt),
                             });
 
                             confirmButtons.append(switchButton, cancelButton);
                             confirmPrompt.append(confirmTitle, confirmText, confirmButtons);
-                            confirmShade.append(confirmPrompt);
-                            confirmShade.style.display = 'flex';
+                            openPrompt(confirmPrompt);
                         } else {
                             // Switch avatar directly if game is not running
                             try {

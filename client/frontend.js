@@ -24,11 +24,13 @@ import {
     updateInstanceCount,
     addEntityTabs,
     createUserDetailsHeader,
-    ShowDetails
+    ShowDetails,
+    applyAutoFitFont
 } from './astrolib/details_constructor.js';
 import { loadShares } from './astrolib/shares.js';
-import { 
-    imageCache,
+import {
+    markImageReady,
+    clearImageCache,
     getCachedImage,
     setImageSource,
     initializeFriendsModule,
@@ -345,9 +347,26 @@ export function createElement(type, options = {}) {
     return element;
 }
 
+// Shared prompt layer helpers. Multiple modals can be open at once (e.g. the
+// updater modal opening on top of an existing socket-disconnect prompt), so
+// the shade must only be hidden when the last modal has been removed —
+// otherwise closing one modal also hides any siblings still in the layer.
+export function openPrompt(modal) {
+    const shade = document.querySelector('.prompt-layer');
+    if (!shade) return;
+    if (modal && modal.parentNode !== shade) shade.appendChild(modal);
+    shade.style.display = 'flex';
+}
+
+export function closePrompt(modal) {
+    const shade = document.querySelector('.prompt-layer');
+    if (!shade) return;
+    if (modal && modal.parentNode === shade) modal.remove();
+    if (!shade.querySelector('.prompt')) shade.style.display = 'none';
+}
+
 // Temporary reconnect prompt - will be expanded with a proper library later.
 function promptReconnect() {
-    const promptShade = document.querySelector('.prompt-layer');
     const newPrompt = createElement('div', { className: 'prompt' });
     const promptTitle = createElement('div', { className: 'prompt-title', textContent: 'Socket Error' });
     const promptText = createElement('div', { className: 'prompt-text', textContent: 'Socket failed to reconnect after 5 attempts. Click below to manually reconnect.' });
@@ -358,21 +377,27 @@ function promptReconnect() {
         onClick: async () => {
             // Do your reconnect magic here.
             await window.API.reconnectWebSocket();
-            newPrompt.remove();
-            promptShade.style.display = 'none';
+            closePrompt(newPrompt);
         },
     });
 
     promptButtons.append(confirmButton);
     newPrompt.append(promptTitle, promptText, promptButtons);
-    promptShade.append(newPrompt);
-    promptShade.style.display = 'flex';
+    openPrompt(newPrompt);
 }
 
 // Update prompt using the new modal system
 function promptUpdate(updateInfo) {
-    const promptShade = document.querySelector('.prompt-layer');
-    const newPrompt = createElement('div', { className: 'prompt' });
+    // If the update modal is already in the DOM (e.g. another modal closed
+    // and hid the shade out from under it), just re-show the shade instead
+    // of building a duplicate.
+    const existingUpdatePrompt = document.querySelector('.prompt-layer .update-prompt');
+    if (existingUpdatePrompt) {
+        openPrompt(existingUpdatePrompt);
+        return;
+    }
+
+    const newPrompt = createElement('div', { className: 'prompt update-prompt' });
     const promptTitle = createElement('div', { className: 'prompt-title', textContent: 'Update Available' });
     
     // Create main prompt text with version info
@@ -408,8 +433,7 @@ function promptUpdate(updateInfo) {
         textContent: updateInfo.autoInstall ? 'Download and Install' : 'View Release on GitHub',
         onClick: async () => {
             try {
-                newPrompt.remove();
-                promptShade.style.display = 'none';
+                closePrompt(newPrompt);
 
                 if (updateInfo.autoInstall) {
                     pushToast('Downloading update... The app will restart automatically once installation begins.', 'info');
@@ -430,8 +454,7 @@ function promptUpdate(updateInfo) {
         onClick: async () => {
             try {
                 await window.API.updateAction('askLater', updateInfo);
-                newPrompt.remove();
-                promptShade.style.display = 'none';
+                closePrompt(newPrompt);
             } catch (error) {
                 pushToast('Failed to set update reminder', 'error');
             }
@@ -444,8 +467,7 @@ function promptUpdate(updateInfo) {
         onClick: async () => {
             try {
                 await window.API.updateAction('ignore', updateInfo);
-                newPrompt.remove();
-                promptShade.style.display = 'none';
+                closePrompt(newPrompt);
             } catch (error) {
                 pushToast('Failed to ignore update', 'error');
             }
@@ -458,8 +480,7 @@ function promptUpdate(updateInfo) {
         onClick: async () => {
             try {
                 await window.API.updateAction('skip', updateInfo);
-                newPrompt.remove();
-                promptShade.style.display = 'none';
+                closePrompt(newPrompt);
             } catch (error) {
                 pushToast('Failed to skip version', 'error');
             }
@@ -468,8 +489,7 @@ function promptUpdate(updateInfo) {
 
     promptButtons.append(downloadButton, askLaterButton, ignoreButton, skipButton);
     newPrompt.append(promptTitle, promptText, promptButtons);
-    promptShade.append(newPrompt);
-    promptShade.style.display = 'flex';
+    openPrompt(newPrompt);
 }
 
 // ===============
@@ -504,6 +524,35 @@ window.API.onLoadingPage((_event) => {
 // Update loading screen status during authentication
 window.API.onLoginPage((_event, _availableCredentials) => {
     loadingScreen.updateStatus('Checking credentials...');
+});
+
+// Surface authentication / initial-request failures in-app rather than via an
+// OS error box that previously dragged the whole process down with it.
+window.API.onAuthError((_event, errorDetails) => {
+    loadingScreen.hide();
+
+    const modal = createElement('div', { className: 'prompt' });
+    const title = createElement('div', { className: 'prompt-title', textContent: 'Sign-In Failed' });
+    const text = createElement('div', { className: 'prompt-text' });
+    const summary = createElement('p', {
+        textContent: 'Something went wrong while signing you in. Check your internet connection and try again. You’ve been logged out so you can pick a different profile or re-enter your credentials.',
+    });
+    const detail = createElement('pre', {
+        className: 'auth-error-detail',
+        textContent: errorDetails || 'Unknown error',
+    });
+    text.append(summary, detail);
+
+    const buttons = createElement('div', { className: 'prompt-buttons' });
+    const okButton = createElement('button', {
+        className: 'prompt-btn-confirm',
+        textContent: 'OK',
+        onClick: () => closePrompt(modal),
+    });
+    buttons.append(okButton);
+
+    modal.append(title, text, buttons);
+    openPrompt(modal);
 });
 
 // Hide loading screen when main content is ready
@@ -571,7 +620,6 @@ function formatFileSize(bytes) {
 
 // Create download progress modal
 function createDownloadProgressModal(fileName) {
-    const promptShade = document.querySelector('.prompt-layer');
     downloadProgressModal = createElement('div', { className: 'prompt download-progress-modal' });
     
     const modalTitle = createElement('div', { 
@@ -611,8 +659,7 @@ function createDownloadProgressModal(fileName) {
     
     modalContent.append(fileNameDisplay, downloadProgressContainer, progressDetails);
     downloadProgressModal.append(modalTitle, modalContent);
-    promptShade.append(downloadProgressModal);
-    promptShade.style.display = 'flex';
+    openPrompt(downloadProgressModal);
 }
 
 // Update download progress
@@ -675,11 +722,9 @@ window.API.onUpdateDownloadComplete((_event, data) => {
 // Handle dismiss update prompt event (when notification actions are used)
 window.API.onDismissUpdatePrompt((_event) => {
     log('Dismissing update prompt due to notification action');
-    const promptShade = document.querySelector('.prompt-layer');
-    const updatePrompt = promptShade.querySelector('.prompt');
-    if (updatePrompt && promptShade.style.display === 'flex') {
-        updatePrompt.remove();
-        promptShade.style.display = 'none';
+    const updatePrompt = document.querySelector('.prompt-layer .update-prompt');
+    if (updatePrompt) {
+        closePrompt(updatePrompt);
         log('Update prompt dismissed successfully');
     }
 });
@@ -819,20 +864,23 @@ window.API.onGetActiveUser((_event, activeUser) => {
 
 // Add image loading handler
 window.API.onImageLoaded((_event, imageData) => {
-    const { imageHash, imageBase64 } = imageData;
+    const { imageHash } = imageData;
+    if (!imageHash) return;
 
-    // Cache the image when it's loaded
-    imageCache[imageHash] = imageBase64;
+    // Mark the hash as servable so getCachedImage() returns the protocol URL.
+    markImageReady(imageHash);
+
+    const imageUrl = `cvr-image://${imageHash}`;
 
     // Update all elements with matching data-hash
     document.querySelectorAll(`[data-hash="${imageHash}"]`).forEach(element => {
         if (element.classList.contains('profile-navbar-button')) {
-            element.style.backgroundImage = `url(${imageBase64})`;
+            element.style.backgroundImage = `url('${imageUrl}')`;
         } else if (element.tagName === 'IMG') {
-            element.src = imageBase64;
+            element.src = imageUrl;
         } else if (element.classList.contains('thumbnail-container')) {
             // For thumbnail containers using background images
-            element.style.backgroundImage = `url('${imageBase64}')`;
+            element.style.backgroundImage = `url('${imageUrl}')`;
             element.style.backgroundSize = 'cover';
         }
     });
@@ -2129,7 +2177,7 @@ window.API.onActiveInstancesUpdate((_event, activeInstancesData) => {
 
         let friendCount = 0;
         for (const member of result.members) {
-            let userIconSource = member?.imageBase64 ?? 'img/ui/placeholder.png';
+            let userIconSource = getCachedImage(member?.imageHash);
             let userIcon = createElement('img', {
                 className: 'active-instance-node--user-icon',
                 src: userIconSource,
@@ -2211,7 +2259,7 @@ window.API.onActiveInstancesUpdate((_event, activeInstancesData) => {
         instanceName = `<span class="instance-privacy-type material-symbols-outlined" data-tooltip="${privacyTooltip}">${privacyIcon}</span>&nbsp;${instanceName}`;
 
         // Depending on whether it's a refresh or not the image might be already loaded
-        const worldImageSource = result?.world?.imageBase64 ?? 'img/ui/placeholder.png';
+        const worldImageSource = getCachedImage(result?.world?.imageHash);
 
         // If no friends then no friend counter :'(
 
@@ -2810,14 +2858,21 @@ window.API.onRecentActivityUpdate((_event, recentActivities) => {
 
             case ActivityUpdatesType.Friends: {
 
-                // Get instance info from old and new
-                let { name, type } = getFriendStatus(recentActivity.previous);
-                const previousInstanceInfo = `${name}${type ? ` <span class="history-type-prev">${type}</span>` : ''}`;
-                ({ name, type } = getFriendStatus(recentActivity.current));
-                const currentInstanceInfo = `${name}${type ? ` <span class="history-type">${type}</span>` : ''}`;
+                // Get instance info from old and new. When there's no separate type
+                // (e.g. "Offline", "Unknown"), render the name itself with the type-label
+                // class so it matches the size/weight of "Public", "Friends Only", etc.
+                // When both are present, the world name lives in its own span so it can
+                // truncate with an ellipsis without clobbering the type label next to it.
+                const formatStatus = ({ name, type }, typeClass) => {
+                    if (!name) return `<span class="${typeClass}">${type}</span>`;
+                    if (!type) return `<span class="${typeClass}">${name}</span>`;
+                    return `<span class="history-world-name">${name}</span><span class="${typeClass}">${type}</span>`;
+                };
+                const previousInstanceInfo = formatStatus(getFriendStatus(recentActivity.previous), 'history-type-prev');
+                const currentInstanceInfo = formatStatus(getFriendStatus(recentActivity.current), 'history-type');
 
                 // Depending on whether it's a refresh or not the image might be already loaded
-                const friendImgSrc = recentActivity.current.imageBase64 ?? 'img/ui/placeholder.png';
+                const friendImgSrc = getCachedImage(recentActivity.current.imageHash);
 
                 const imgOnlineClass = recentActivity.current.isOnline ? 'class="icon-is-online"' : '';
 
@@ -2825,11 +2880,18 @@ window.API.onRecentActivityUpdate((_event, recentActivities) => {
                     className: 'friend-history-node',
                     innerHTML:
                         `<img ${imgOnlineClass} src="${friendImgSrc}" data-hash="${recentActivity.current.imageHash}"/>
-                        <p class="friend-name-history">${recentActivity.current.name} <small>(${dateStr})</small></p>
-                        <p class="friend-status-history"><span class="old-history">${previousInstanceInfo}</span> ➡ ${currentInstanceInfo}</p>`,
+                        <div class="friend-history-node--body">
+                            <div class="friend-history-node--header">
+                                <p class="friend-name-history">${recentActivity.current.name}</p>
+                                <span class="friend-history-node--timestamp">${dateStr}</span>
+                            </div>
+                            <p class="friend-status-history friend-status-history--prev">${previousInstanceInfo}</p>
+                            <p class="friend-status-history friend-status-history--current"><span class="material-symbols-outlined friend-status-history--arrow">subdirectory_arrow_right</span>${currentInstanceInfo}</p>
+                        </div>`,
                     onClick: () => ShowDetailsWrapper(DetailsType.User, recentActivity.current.id),
                 });
 
+                applyAutoFitFont(activityUpdateNode.querySelector('.friend-name-history'), { maxFontSize: 18, minFontSize: 11, measureSelf: true });
                 newNodes.push(activityUpdateNode);
                 break;
             }
@@ -2837,7 +2899,7 @@ window.API.onRecentActivityUpdate((_event, recentActivities) => {
             case ActivityUpdatesType.Invites: {
                 // Get invite information
                 const invite = recentActivity.invite;
-                
+
                 // Use cached image if available, otherwise use placeholder
                 const userImgSrc = getCachedImage(invite.user.imageHash);
 
@@ -2845,11 +2907,17 @@ window.API.onRecentActivityUpdate((_event, recentActivities) => {
                     className: 'friend-history-node invite-history-node',
                     innerHTML:
                         `<img src="${userImgSrc}" data-hash="${invite.user.imageHash}"/>
-                        <p class="friend-name-history">${invite.user.name} <small>(${dateStr})</small></p>
-                        <p class="friend-status-history">invited you to <strong>${invite.instanceName}</strong></p>`,
+                        <div class="friend-history-node--body">
+                            <div class="friend-history-node--header">
+                                <p class="friend-name-history">${invite.user.name}</p>
+                                <span class="friend-history-node--timestamp">${dateStr}</span>
+                            </div>
+                            <p class="friend-status-history">invited you to <strong>${invite.instanceName}</strong></p>
+                        </div>`,
                     onClick: () => ShowDetailsWrapper(DetailsType.User, invite.user.id),
                 });
 
+                applyAutoFitFont(inviteHistoryNode.querySelector('.friend-name-history'), { maxFontSize: 18, minFontSize: 11, measureSelf: true });
                 newNodes.push(inviteHistoryNode);
                 break;
             }
@@ -2857,7 +2925,7 @@ window.API.onRecentActivityUpdate((_event, recentActivities) => {
             case ActivityUpdatesType.InviteRequests: {
                 // Get invite request information
                 const inviteRequest = recentActivity.inviteRequest;
-                
+
                 // Use cached image if available, otherwise use placeholder
                 const userImgSrc = getCachedImage(inviteRequest.sender.imageHash);
 
@@ -2865,11 +2933,17 @@ window.API.onRecentActivityUpdate((_event, recentActivities) => {
                     className: 'friend-history-node invite-request-history-node',
                     innerHTML:
                         `<img src="${userImgSrc}" data-hash="${inviteRequest.sender.imageHash}"/>
-                        <p class="friend-name-history">${inviteRequest.sender.name} <small>(${dateStr})</small></p>
-                        <p class="friend-status-history">requested an invite from you</p>`,
+                        <div class="friend-history-node--body">
+                            <div class="friend-history-node--header">
+                                <p class="friend-name-history">${inviteRequest.sender.name}</p>
+                                <span class="friend-history-node--timestamp">${dateStr}</span>
+                            </div>
+                            <p class="friend-status-history">requested an invite from you</p>
+                        </div>`,
                     onClick: () => ShowDetailsWrapper(DetailsType.User, inviteRequest.sender.id),
                 });
 
+                applyAutoFitFont(inviteRequestHistoryNode.querySelector('.friend-name-history'), { maxFontSize: 18, minFontSize: 11, measureSelf: true });
                 newNodes.push(inviteRequestHistoryNode);
                 break;
             }
@@ -2953,11 +3027,20 @@ document.querySelector('#logout-button').addEventListener('click', async _event 
 document.querySelector('#check-updates-button').addEventListener('click', async _event => {
     _event.target.disabled = true;
     try {
-        const { hasUpdates, msg, updateInfo } = await window.API.checkForUpdates();
-        if (hasUpdates && updateInfo) {
-            promptUpdate(updateInfo);
+        // If the update modal is already in the prompt layer — e.g. another
+        // modal closed and hid the shade out from under it — just re-show it
+        // rather than asking the backend, which would otherwise short-circuit
+        // because `dialogOpened` is still set on its side.
+        const existingUpdatePrompt = document.querySelector('.prompt-layer .update-prompt');
+        if (existingUpdatePrompt) {
+            openPrompt(existingUpdatePrompt);
         } else {
-            pushToast(msg, 'confirm');
+            const { hasUpdates, msg, updateInfo } = await window.API.checkForUpdates();
+            if (hasUpdates && updateInfo) {
+                promptUpdate(updateInfo);
+            } else {
+                pushToast(msg, 'confirm');
+            }
         }
     } catch (error) {
         pushToast(error.message || 'Failed to check for updates', 'error');
@@ -2974,7 +3057,7 @@ document.querySelector('#clear-cached-images-button').addEventListener('click', 
         if (result.success) {
             pushToast(result.message, 'confirm');
             // Clear the in-memory cache as well
-            Object.keys(imageCache).forEach(key => delete imageCache[key]);
+            clearImageCache();
         } else {
             pushToast(result.message, 'error');
         }
@@ -4139,7 +4222,6 @@ manageFriendNotificationsButton.addEventListener('click', async () => {
 
 // Function to show the manage friend notifications modal
 function showManageFriendNotificationsModal(friendsWithNotifications) {
-    const modalShade = document.querySelector('.prompt-layer');
     const modal = createElement('div', { className: 'prompt manage-notifications-modal' });
     
     // Modal title
@@ -4235,9 +4317,8 @@ function showManageFriendNotificationsModal(friendsWithNotifications) {
                 title: 'View friend profile',
                 onClick: () => {
                     // Close the modal first
-                    modal.remove();
-                    modalShade.style.display = 'none';
-                    
+                    closePrompt(modal);
+
                     // Open the friend's profile
                     ShowDetailsWrapper(DetailsType.User, friend.id);
                 }
@@ -4266,19 +4347,15 @@ function showManageFriendNotificationsModal(friendsWithNotifications) {
     const closeButton = createElement('button', {
         className: 'prompt-btn-neutral',
         textContent: 'Close',
-        onClick: () => {
-            modal.remove();
-            modalShade.style.display = 'none';
-        }
+        onClick: () => closePrompt(modal),
     });
-    
+
     modalButtons.appendChild(closeButton);
-    
+
     // Assemble modal
     modal.append(modalTitle, modalContent, modalButtons);
-    modalShade.append(modal);
-    modalShade.style.display = 'flex';
-    
+    openPrompt(modal);
+
     // Apply tooltips to newly created elements
     applyTooltips();
 }

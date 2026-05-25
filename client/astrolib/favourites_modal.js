@@ -5,6 +5,7 @@
 import { pushToast } from './toasty_notifications.js';
 import { applyTooltips } from './tooltip.js';
 import { decodeHtmlEntities } from './details_constructor.js';
+import { openPrompt, closePrompt } from '../frontend.js';
 
 // Logging function to prevent memory leaking when bundled
 let isPackaged = false;
@@ -119,7 +120,6 @@ export async function showFavouritesModal(entityType, entityId, entityName, curr
         }
         
         // Create modal elements
-        const modalShade = document.querySelector('.prompt-layer');
         const modal = createElement('div', { className: 'prompt favourites-modal' });
         
         // Modal title
@@ -182,9 +182,8 @@ export async function showFavouritesModal(entityType, entityId, entityName, curr
                     }
                     
                     // Close modal
-                    modal.remove();
-                    modalShade.style.display = 'none';
-                    
+                    closePrompt(modal);
+
                     // Call success callback if provided to trigger content refresh
                     if (onSuccess && typeof onSuccess === 'function') {
                         onSuccess(entityType, entityId);
@@ -201,18 +200,14 @@ export async function showFavouritesModal(entityType, entityId, entityName, curr
         const cancelButton = createElement('button', {
             className: 'prompt-btn-neutral',
             textContent: 'Cancel',
-            onClick: () => {
-                modal.remove();
-                modalShade.style.display = 'none';
-            }
+            onClick: () => closePrompt(modal),
         });
-        
+
         modalButtons.append(applyButton, cancelButton);
-        
+
         // Assemble modal
         modal.append(modalTitle, modalContent, modalButtons);
-        modalShade.append(modal);
-        modalShade.style.display = 'flex';
+        openPrompt(modal);
         
         // Apply tooltips to newly created elements
         applyTooltips();

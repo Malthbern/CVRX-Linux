@@ -4,6 +4,7 @@
 
 import { pushToast } from './toasty_notifications.js';
 import { applyTooltips } from './tooltip.js';
+import { openPrompt, closePrompt } from '../frontend.js';
 
 // Logging function to prevent memory leaking when bundled
 let isPackaged = false;
@@ -329,10 +330,9 @@ function showCreateCategoryDialog() {
         return;
     }
     
-    const modalShade = document.querySelector('.prompt-layer');
     const modal = document.createElement('div');
     modal.className = 'prompt';
-    
+
     const modalTitle = document.createElement('div');
     modalTitle.className = 'prompt-title';
     modalTitle.textContent = `Create New ${currentCategoryType.charAt(0).toUpperCase() + currentCategoryType.slice(1, -1)} Category`;
@@ -372,28 +372,23 @@ function showCreateCategoryDialog() {
             
             // Reload categories to reflect the change
             await loadCategoriesForType(currentCategoryType);
-            
-            modal.remove();
-            modalShade.style.display = 'none';
+
+            closePrompt(modal);
         } catch (error) {
             log('Failed to create category:', error);
             pushToast(`Failed to create category: ${error.message || error}`, 'error');
         }
     });
-    
+
     const cancelButton = document.createElement('button');
     cancelButton.className = 'prompt-btn-neutral';
     cancelButton.textContent = 'Cancel';
-    cancelButton.addEventListener('click', () => {
-        modal.remove();
-        modalShade.style.display = 'none';
-    });
-    
+    cancelButton.addEventListener('click', () => closePrompt(modal));
+
     modalButtons.append(createButton, cancelButton);
     modal.append(modalTitle, modalContent, modalButtons);
-    modalShade.append(modal);
-    modalShade.style.display = 'flex';
-    
+    openPrompt(modal);
+
     // Focus the input
     setTimeout(() => {
         const nameInput = modal.querySelector('#new-category-name');
@@ -402,7 +397,6 @@ function showCreateCategoryDialog() {
 }
 
 function showDeleteCategoryDialog(categoryId, categoryName) {
-    const modalShade = document.querySelector('.prompt-layer');
     const modal = document.createElement('div');
     modal.className = 'prompt';
     
@@ -436,27 +430,22 @@ function showDeleteCategoryDialog(categoryId, categoryName) {
             
             // Reload categories to reflect the change
             await loadCategoriesForType(currentCategoryType);
-            
-            modal.remove();
-            modalShade.style.display = 'none';
+
+            closePrompt(modal);
         } catch (error) {
             log('Failed to delete category:', error);
             pushToast(`Failed to delete category: ${error.message || error}`, 'error');
         }
     });
-    
+
     const cancelButton = document.createElement('button');
     cancelButton.className = 'prompt-btn-neutral';
     cancelButton.textContent = 'Cancel';
-    cancelButton.addEventListener('click', () => {
-        modal.remove();
-        modalShade.style.display = 'none';
-    });
-    
+    cancelButton.addEventListener('click', () => closePrompt(modal));
+
     modalButtons.append(deleteButton, cancelButton);
     modal.append(modalTitle, modalContent, modalButtons);
-    modalShade.append(modal);
-    modalShade.style.display = 'flex';
+    openPrompt(modal);
 }
 
 // ===========
