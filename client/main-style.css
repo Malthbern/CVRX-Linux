@@ -1538,6 +1538,51 @@ button {
     border-radius: var(--border-radii);
     min-height: 60px;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.friend-history-node--body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+}
+
+.friend-history-node--header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.friend-history-node--timestamp {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    white-space: nowrap;
+}
+
+.friend-status-history--arrow {
+    font-size: 14px !important;
+    color: rgba(255, 255, 255, 0.6);
+    flex-shrink: 0;
+}
+
+.friend-status-history--prev {
+    font-style: italic;
+    filter: brightness(0.5);
+}
+
+.history-world-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .friend-history-node:nth-of-type(odd) {
@@ -1594,20 +1639,14 @@ button {
     font-style: italic;
 }
 
-.old-history {
-    font-style: italic;
-    filter: brightness(0.5);
-}
-
 .filtered-item {
     display: none;
 }
 
 .friend-history-node :is(img) {
-    float: left;
+    flex-shrink: 0;
     height: var(--thumbnail-size-standard);
     width: var(--thumbnail-size-standard);
-    margin-right: 5px;
     border-radius: var(--border-radii);
 }
 
@@ -1621,12 +1660,15 @@ button {
     font-size: 18px;
 }
 
-.friend-history-node:hover .friend-name-history {
-    text-decoration: underline;
+.friend-name-history {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
-.friend-name-history small {
-    font-size: 10px;
+.friend-history-node:hover .friend-name-history {
+    text-decoration: underline;
 }
 
 .friend-list-node:hover .friend-name {
@@ -1639,15 +1681,21 @@ button {
 
 .friend-status-history {
     font-size: 12px;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    min-width: 0;
 }
 
 .history-type {
     font-weight: bold;
     font-size: x-small !important;
+    flex-shrink: 0;
 }
 
 .history-type-prev {
     font-size: x-small !important;
+    flex-shrink: 0;
 }
 
 .friend-is-offline {

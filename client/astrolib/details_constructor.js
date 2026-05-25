@@ -43,7 +43,9 @@ const DetailsType = Object.freeze({
 // Single-line auto-fit: keep the element at maxFontSize when it fits, scale
 // down proportionally otherwise. Floors at minFontSize so very long names stay
 // readable. Re-measures when the parent resizes (e.g. window resize).
-export function applyAutoFitFont(element, { maxFontSize = 24, minFontSize = 12 } = {}) {
+// When measureSelf is true, compares the element's own clientWidth (use this
+// when the element doesn't fill its parent — e.g. it's a flex sibling).
+export function applyAutoFitFont(element, { maxFontSize = 24, minFontSize = 12, measureSelf = false } = {}) {
     element.style.whiteSpace = 'nowrap';
 
     let observer = null;
@@ -61,7 +63,7 @@ export function applyAutoFitFont(element, { maxFontSize = 24, minFontSize = 12 }
 
         // Reset to the ceiling first so we re-evaluate from scratch each pass.
         element.style.fontSize = `${maxFontSize}px`;
-        const available = parent.clientWidth;
+        const available = measureSelf ? element.clientWidth : parent.clientWidth;
         const natural = element.scrollWidth;
         if (available > 0 && natural > available) {
             const scaled = (available / natural) * maxFontSize;

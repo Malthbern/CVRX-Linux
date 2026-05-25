@@ -24,7 +24,8 @@ import {
     updateInstanceCount,
     addEntityTabs,
     createUserDetailsHeader,
-    ShowDetails
+    ShowDetails,
+    applyAutoFitFont
 } from './astrolib/details_constructor.js';
 import { loadShares } from './astrolib/shares.js';
 import {
@@ -2857,11 +2858,18 @@ window.API.onRecentActivityUpdate((_event, recentActivities) => {
 
             case ActivityUpdatesType.Friends: {
 
-                // Get instance info from old and new
-                let { name, type } = getFriendStatus(recentActivity.previous);
-                const previousInstanceInfo = `${name}${type ? ` <span class="history-type-prev">${type}</span>` : ''}`;
-                ({ name, type } = getFriendStatus(recentActivity.current));
-                const currentInstanceInfo = `${name}${type ? ` <span class="history-type">${type}</span>` : ''}`;
+                // Get instance info from old and new. When there's no separate type
+                // (e.g. "Offline", "Unknown"), render the name itself with the type-label
+                // class so it matches the size/weight of "Public", "Friends Only", etc.
+                // When both are present, the world name lives in its own span so it can
+                // truncate with an ellipsis without clobbering the type label next to it.
+                const formatStatus = ({ name, type }, typeClass) => {
+                    if (!name) return `<span class="${typeClass}">${type}</span>`;
+                    if (!type) return `<span class="${typeClass}">${name}</span>`;
+                    return `<span class="history-world-name">${name}</span><span class="${typeClass}">${type}</span>`;
+                };
+                const previousInstanceInfo = formatStatus(getFriendStatus(recentActivity.previous), 'history-type-prev');
+                const currentInstanceInfo = formatStatus(getFriendStatus(recentActivity.current), 'history-type');
 
                 // Depending on whether it's a refresh or not the image might be already loaded
                 const friendImgSrc = getCachedImage(recentActivity.current.imageHash);
@@ -2872,11 +2880,18 @@ window.API.onRecentActivityUpdate((_event, recentActivities) => {
                     className: 'friend-history-node',
                     innerHTML:
                         `<img ${imgOnlineClass} src="${friendImgSrc}" data-hash="${recentActivity.current.imageHash}"/>
-                        <p class="friend-name-history">${recentActivity.current.name} <small>(${dateStr})</small></p>
-                        <p class="friend-status-history"><span class="old-history">${previousInstanceInfo}</span> ➡ ${currentInstanceInfo}</p>`,
+                        <div class="friend-history-node--body">
+                            <div class="friend-history-node--header">
+                                <p class="friend-name-history">${recentActivity.current.name}</p>
+                                <span class="friend-history-node--timestamp">${dateStr}</span>
+                            </div>
+                            <p class="friend-status-history friend-status-history--prev">${previousInstanceInfo}</p>
+                            <p class="friend-status-history friend-status-history--current"><span class="material-symbols-outlined friend-status-history--arrow">subdirectory_arrow_right</span>${currentInstanceInfo}</p>
+                        </div>`,
                     onClick: () => ShowDetailsWrapper(DetailsType.User, recentActivity.current.id),
                 });
 
+                applyAutoFitFont(activityUpdateNode.querySelector('.friend-name-history'), { maxFontSize: 18, minFontSize: 11, measureSelf: true });
                 newNodes.push(activityUpdateNode);
                 break;
             }
@@ -2884,7 +2899,7 @@ window.API.onRecentActivityUpdate((_event, recentActivities) => {
             case ActivityUpdatesType.Invites: {
                 // Get invite information
                 const invite = recentActivity.invite;
-                
+
                 // Use cached image if available, otherwise use placeholder
                 const userImgSrc = getCachedImage(invite.user.imageHash);
 
@@ -2892,11 +2907,17 @@ window.API.onRecentActivityUpdate((_event, recentActivities) => {
                     className: 'friend-history-node invite-history-node',
                     innerHTML:
                         `<img src="${userImgSrc}" data-hash="${invite.user.imageHash}"/>
-                        <p class="friend-name-history">${invite.user.name} <small>(${dateStr})</small></p>
-                        <p class="friend-status-history">invited you to <strong>${invite.instanceName}</strong></p>`,
+                        <div class="friend-history-node--body">
+                            <div class="friend-history-node--header">
+                                <p class="friend-name-history">${invite.user.name}</p>
+                                <span class="friend-history-node--timestamp">${dateStr}</span>
+                            </div>
+                            <p class="friend-status-history">invited you to <strong>${invite.instanceName}</strong></p>
+                        </div>`,
                     onClick: () => ShowDetailsWrapper(DetailsType.User, invite.user.id),
                 });
 
+                applyAutoFitFont(inviteHistoryNode.querySelector('.friend-name-history'), { maxFontSize: 18, minFontSize: 11, measureSelf: true });
                 newNodes.push(inviteHistoryNode);
                 break;
             }
@@ -2904,7 +2925,7 @@ window.API.onRecentActivityUpdate((_event, recentActivities) => {
             case ActivityUpdatesType.InviteRequests: {
                 // Get invite request information
                 const inviteRequest = recentActivity.inviteRequest;
-                
+
                 // Use cached image if available, otherwise use placeholder
                 const userImgSrc = getCachedImage(inviteRequest.sender.imageHash);
 
@@ -2912,11 +2933,17 @@ window.API.onRecentActivityUpdate((_event, recentActivities) => {
                     className: 'friend-history-node invite-request-history-node',
                     innerHTML:
                         `<img src="${userImgSrc}" data-hash="${inviteRequest.sender.imageHash}"/>
-                        <p class="friend-name-history">${inviteRequest.sender.name} <small>(${dateStr})</small></p>
-                        <p class="friend-status-history">requested an invite from you</p>`,
+                        <div class="friend-history-node--body">
+                            <div class="friend-history-node--header">
+                                <p class="friend-name-history">${inviteRequest.sender.name}</p>
+                                <span class="friend-history-node--timestamp">${dateStr}</span>
+                            </div>
+                            <p class="friend-status-history">requested an invite from you</p>
+                        </div>`,
                     onClick: () => ShowDetailsWrapper(DetailsType.User, inviteRequest.sender.id),
                 });
 
+                applyAutoFitFont(inviteRequestHistoryNode.querySelector('.friend-name-history'), { maxFontSize: 18, minFontSize: 11, measureSelf: true });
                 newNodes.push(inviteRequestHistoryNode);
                 break;
             }
