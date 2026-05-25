@@ -1211,11 +1211,32 @@ async function loadTabContent(tab, entityId) {
             case 'worlds':
                 items = await window.API.getUserPublicWorlds(entityId);
                 break;
-            case 'users':
+            case 'users': {
                 // Get instance info to access the members
                 const instanceInfo = await window.API.getInstanceById(entityId);
-                items = instanceInfo.members || [];
+                const members = instanceInfo.members || [];
+
+                // For group instances, cross-reference members with the group's
+                // moderators list so each user can be tagged with their actual
+                // rank (Owner / Moderator / Trial) instead of a generic "User".
+                const roleById = {};
+                for (const mod of (instanceInfo.group?.moderators ?? [])) {
+                    if (mod?.id && mod?.role) roleById[mod.id] = mod.role;
+                }
+
+                // Annotate and sort: Admin > Moderator > Trial > regular User,
+                // alphabetical (case-insensitive) within each rank.
+                const rankOrder = { Admin: 0, Moderator: 1, Trial: 2 };
+                items = members
+                    .map(m => ({ ...m, groupRole: roleById[m.id] || null }))
+                    .sort((a, b) => {
+                        const ra = a.groupRole ? (rankOrder[a.groupRole] ?? 99) : 99;
+                        const rb = b.groupRole ? (rankOrder[b.groupRole] ?? 99) : 99;
+                        if (ra !== rb) return ra - rb;
+                        return (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase());
+                    });
                 break;
+            }
             case 'instances':
                 // For worlds, get active instances using this world
                 // Filter the global active instances by world ID
@@ -1312,7 +1333,15 @@ async function loadTabContent(tab, entityId) {
                         </div>`;
                     break;
                 case 'users': {
-                    icon = 'person';
+                    // Default rendering — regular user with no group role.
+                    let roleLabel = 'User';
+                    let roleIcon = 'person';
+                    switch (item.groupRole) {
+                        case 'Admin':     roleLabel = 'Admin';     roleIcon = 'shield_person'; break;
+                        case 'Moderator': roleLabel = 'Moderator'; roleIcon = 'shield'; break;
+                        case 'Trial':     roleLabel = 'Trial';     roleIcon = 'school'; break;
+                    }
+                    icon = roleIcon;
                     // Add friend indicator if applicable
                     const friendIndicator = item.isFriend ?
                         `<div class="friend-indicator">
@@ -1327,7 +1356,7 @@ async function loadTabContent(tab, entityId) {
                         ${friendIndicator}
                         ${blockedIndicator}
                         <div class="card-detail">
-                            <span class="material-symbols-outlined">${icon}</span>User
+                            <span class="material-symbols-outlined">${icon}</span>${roleLabel}
                         </div>`;
                     break;
                 }

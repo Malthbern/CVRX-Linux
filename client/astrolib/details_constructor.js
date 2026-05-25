@@ -2122,7 +2122,31 @@ async function ShowDetails(entityType, entityId, dependencies) {
                 text: privacyDisplayName
             });
             privacySegment.classList.add('instance-details-privacy-segment');
-            
+
+            // Group segment (only when the instance privacy is group-scoped and the
+            // API returned an accompanying group). Mirrors the featuredGroup segment
+            // pattern from user details so it's clickable through to the group.
+            let groupSegment = null;
+            const isGroupInstance = entityInfo.instanceSettingPrivacy === 'Group'
+                || entityInfo.instanceSettingPrivacy === 'GroupPlus'
+                || entityInfo.instanceSettingPrivacy === 'GroupPublic';
+            if (isGroupInstance && entityInfo.group) {
+                const groupId = entityInfo.group.id || null;
+                const groupName = entityInfo.group.name || 'Unknown Group';
+                const verifiedBadge = entityInfo.group.isVerified
+                    ? ' <span class="material-symbols-outlined details-segment-verified-badge" data-tooltip="Verified Group">verified</span>'
+                    : '';
+                groupSegment = createDetailsSegment({
+                    iconType: 'image',
+                    iconHash: entityInfo.group.imageHash,
+                    text: `${groupName}${verifiedBadge}`,
+                    clickable: !!groupId,
+                    onClick: groupId ? () => showGroupDetails(groupId) : null,
+                    tooltip: groupId ? 'View Group' : null,
+                });
+                groupSegment.classList.add('instance-details-group-segment');
+            }
+
             // Region segment
             const regionSegment = createDetailsSegment({
                 icon: 'location_on',
@@ -2145,6 +2169,7 @@ async function ShowDetails(entityType, entityId, dependencies) {
             headerElements.segmentsContainer.appendChild(separator);
             headerElements.segmentsContainer.appendChild(playerCountSegment);
             headerElements.segmentsContainer.appendChild(privacySegment);
+            if (groupSegment) headerElements.segmentsContainer.appendChild(groupSegment);
             headerElements.segmentsContainer.appendChild(regionSegment);
             
             // Add instance ID segment if we have one

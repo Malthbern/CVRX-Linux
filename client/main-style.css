@@ -5653,6 +5653,14 @@ button {
     flex-shrink: 0;
 }
 
+/* Inline verification checkmark sitting next to a segment's text label. */
+.details-segment .details-segment-verified-badge.material-symbols-outlined {
+    font-size: 16px;
+    color: #4FC3F7;
+    vertical-align: -2px;
+    margin-left: 2px;
+}
+
 .details-segment.clickable {
     cursor: pointer;
     transition: var(--transition-fast);
