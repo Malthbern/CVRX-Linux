@@ -6,7 +6,7 @@ import { pushToast } from './toasty_notifications.js';
 import { applyTooltips } from './tooltip.js';
 import { createElement } from '../frontend.js';
 import { showFavouritesModal } from './favourites_modal.js';
-import { applyAutoFitFont } from './details_constructor.js';
+import { applyAutoFitFont, decodeHtmlEntities } from './details_constructor.js';
 
 // Material Symbol that best represents each instance privacy / status label.
 // Falls back to a generic help icon for anything not in the table.
@@ -323,6 +323,22 @@ export function handleFriendsRefresh(friends, isRefresh) {
         'Offline Instance': 'offlineInstance',
     };
 
+    // Private / Offline Instance entries don't expose the world they're in, so
+    // they get a flat list under their type. Everything else is sub-grouped by
+    // specific instance so multiple Public instances surface as distinct buckets.
+    const FLAT_ONLY_TYPES = new Set(['Private Instance', 'Offline Instance']);
+
+    // Per-category buckets built during the loop, rendered after. Each bucket
+    // can hold a flat list and/or sub-buckets keyed by instance id.
+    const categoryBuckets = {};
+    for (const key in categories) {
+        categoryBuckets[key] = {
+            typeLabel: null,
+            flat: [],
+            byInstance: new Map(), // instanceId -> { name, nodes: [] }
+        };
+    }
+
     // Clear all children (this event sends all friends, we so can empty our previous state)
     friendsBarNode.replaceChildren();
     friendsListNode.replaceChildren();
@@ -354,18 +370,36 @@ export function handleFriendsRefresh(friends, isRefresh) {
                 onClick: () => ShowDetailsWrapper(DetailsType.User, friend.id),
             });
 
-            // Get category from map
+            // Auto-shrink the three info rows so long names/worlds don't wrap
+            // to a new line. Each row is its own grid cell, so measureSelf is
+            // the correct anchor for the available width.
+            applyAutoFitFont(onlineFriendNode.querySelector('.online-friend-node--name'),
+                { maxFontSize: 18, minFontSize: 10, measureSelf: true });
+            applyAutoFitFont(onlineFriendNode.querySelector('.online-friend-node--status'),
+                { maxFontSize: 11, minFontSize: 8, measureSelf: true });
+            applyAutoFitFont(onlineFriendNode.querySelector('.online-friend-node--world'),
+                { maxFontSize: 11, minFontSize: 8, measureSelf: true });
+
+            // Bucket by category, sub-grouping by specific instance where the
+            // world is known. Friends without resolvable instance info fall
+            // back into the flat list for the category.
             const categoryKey = instanceTypeToCategoryKey[instanceTypeStr];
-
-            // Populate category with friend
             if (categoryKey) {
-                const category = categories[categoryKey];
-
-                // If the category is empty, start by giving it its title
-                if (!category.children.length) {
-                    category.appendChild(createFriendsListCategory(instanceTypeStr));
+                const bucket = categoryBuckets[categoryKey];
+                bucket.typeLabel = instanceTypeStr;
+                const canSubGroup = !FLAT_ONLY_TYPES.has(instanceTypeStr) && friend.instance?.id;
+                if (canSubGroup) {
+                    const instanceId = friend.instance.id;
+                    let group = bucket.byInstance.get(instanceId);
+                    if (!group) {
+                        const decodedName = decodeHtmlEntities(friend.instance.name) || 'Unknown Instance';
+                        group = { name: decodedName, nodes: [] };
+                        bucket.byInstance.set(instanceId, group);
+                    }
+                    group.nodes.push(onlineFriendNode);
+                } else {
+                    bucket.flat.push(onlineFriendNode);
                 }
-                category.appendChild(onlineFriendNode);
             } else {
                 friendsBarNode.appendChild(onlineFriendNode);
             }
@@ -488,14 +522,35 @@ export function handleFriendsRefresh(friends, isRefresh) {
     friendsListNode.append(...friendCards);
     applyTooltips();
 
-    // After getting all friends statuses, populate the Friends Sidebar in order of Categories
+    // After getting all friends statuses, populate the Friends Sidebar in order
+    // of Categories. Within sub-groupable categories we emit one sub-header per
+    // distinct instance (sorted alphabetically by world name); the friends array
+    // was already sorted A-Z above so each bucket's nodes preserve that order.
     for (const key in categories) {
         const category = categories[key];
-        if (category.children.length) {
-            let categoryName = category.querySelector('p').textContent;
-            category.querySelector('p').textContent = `${categoryName} - ${category.children.length - 1}`;
-            friendsBarNode.appendChild(category);
+        const bucket = categoryBuckets[key];
+        const subGroupTotal = Array.from(bucket.byInstance.values())
+            .reduce((sum, g) => sum + g.nodes.length, 0);
+        const total = bucket.flat.length + subGroupTotal;
+        if (total === 0) continue;
+
+        category.appendChild(createFriendsListCategory(`${bucket.typeLabel} - ${total}`));
+
+        const instanceGroups = Array.from(bucket.byInstance.values())
+            .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+        for (const group of instanceGroups) {
+            const subHeader = createElement('p', {
+                className: 'friend-sidebar-subheader',
+                textContent: `${group.name} - ${group.nodes.length}`,
+            });
+            category.appendChild(subHeader);
+            for (const node of group.nodes) category.appendChild(node);
         }
+        // Append any flat overflow (only expected for FLAT_ONLY_TYPES or
+        // friends without a resolvable instance id).
+        for (const node of bucket.flat) category.appendChild(node);
+
+        friendsBarNode.appendChild(category);
     }
 
     // Update the Total Friend Counter :)

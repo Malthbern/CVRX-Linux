@@ -2208,6 +2208,22 @@ button {
     width: 100%;
 }
 
+/* Per-instance sub-grouping inside a category. Smaller and indented so the
+   parent category header stays visually dominant. */
+.friend-sidebar-subheader {
+    font-style: italic;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    text-align: left;
+    width: calc(100% - 8px);
+    margin-left: 8px;
+    padding-top: 2px;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .friend-sidebar-count-icon {
     font-size: 18px;
 }
@@ -2302,6 +2318,8 @@ button {
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 
 .online-friend-node--world,
@@ -2312,6 +2330,8 @@ button {
     height: auto;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 
 .online-friend-node--world {
