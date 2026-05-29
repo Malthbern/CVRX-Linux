@@ -385,7 +385,7 @@ exports.TransferGroupOwnership = async (groupId, userId) => await Post(`/groups/
 
 // Group Invites and Invite Requests
 exports.GetGroupInvites = async () => await Get('/groups/invites');
-exports.DeclineGroupInvite = async (groupId) => await Delete(`/groups/${groupId}/invite`, null);
+exports.DeclineGroupInvite = async (groupId) => await Delete(`/groups/${groupId}/invite`);
 exports.RequestJoinGroup = async (groupId) => await Post(`/groups/${groupId}/join/request`, null);
 exports.DeclineGroupInviteRequest = async (groupId, userId) => await Delete(`/groups/${groupId}/${userId}/request`);
 exports.GetGroupInviteRequests = async (groupId) => await Get(`/groups/${groupId}/requestInvites`);
