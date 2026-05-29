@@ -141,8 +141,8 @@ class Core {
 
         this.#SetupHandlers();
 
-        // Clean up dismissed and notified entries every 5 minutes
-        setInterval(() => this.#CleanupDismissedAndNotifiedEntries(), 5 * 60 * 1000);
+        // Tracking maps are now pruned in-place against the canonical pending
+        // list during each invite/request update — no time-based janitor needed.
 
         // Expose core and api on globals for debugging
         if (!app.isPackaged){
@@ -177,69 +177,36 @@ class Core {
 
         this.blockedUserIds = [];
 
-        // Dismissed invites tracking (shared from frontend)
-        this.dismissedInvites = new Map(); // Map<inviteId, timestamp>
-        this.dismissedInviteRequests = new Map(); // Map<inviteRequestId, timestamp>
-        this.dismissedGroupInvites = new Map(); // Map<groupId, timestamp>
-
-        // Notification tracking (server-side)
-        this.notifiedInvites = new Map(); // Map<inviteId, timestamp>
-        this.notifiedInviteRequests = new Map(); // Map<inviteRequestId, timestamp>
-        this.notifiedGroupInvites = new Map(); // Map<groupId, timestamp>
+        // Per-type tracking. Map<id, timestamp> — the timestamp is informational
+        // only now; entries live as long as the matching invite/request is in
+        // the canonical pending list and are pruned in-place during each
+        // update via #pruneInviteTrackingMaps().
+        this.dismissedInvites = new Map();
+        this.dismissedInviteRequests = new Map();
+        this.dismissedGroupInvites = new Map();
+        this.notifiedInvites = new Map();
+        this.notifiedInviteRequests = new Map();
+        this.notifiedGroupInvites = new Map();
 
         // Tracks whether we've done the first group-invite sync since login. The very first sync seeds
         // `notifiedGroupInvites` silently so pre-existing invites don't fire toast/XSO notifications on
         // launch — only invites that arrive while CVRX is open should toast.
         this.groupInvitesInitialized = false;
-
-        // Cleanup timeout (10 minutes, same as client)
-        this.DISMISS_TIMEOUT = 10 * 60 * 1000;
     }
 
-    #CleanupDismissedAndNotifiedEntries() {
-        const now = Date.now();
-
-        // Clean up dismissed invites
-        for (const [inviteId, timestamp] of this.dismissedInvites.entries()) {
-            if (now - timestamp > this.DISMISS_TIMEOUT) {
-                this.dismissedInvites.delete(inviteId);
-            }
+    // Drop entries from the notified/dismissed maps whose corresponding invite
+    // is no longer in the canonical pending list. This is what keeps the maps
+    // bounded now that the old time-based janitor is gone — and, more
+    // importantly, what prevents still-pending group invites from being
+    // re-notified just because their tracking entry expired during a quiet
+    // period (group invites use a stable groupId that never auto-rotates).
+    #pruneInviteTrackingMaps(notifiedMap, dismissedMap, currentIds) {
+        for (const id of notifiedMap.keys()) {
+            if (!currentIds.has(id)) notifiedMap.delete(id);
         }
-
-        // Clean up dismissed invite requests
-        for (const [inviteRequestId, timestamp] of this.dismissedInviteRequests.entries()) {
-            if (now - timestamp > this.DISMISS_TIMEOUT) {
-                this.dismissedInviteRequests.delete(inviteRequestId);
-            }
+        for (const id of dismissedMap.keys()) {
+            if (!currentIds.has(id)) dismissedMap.delete(id);
         }
-
-        // Clean up notified invites
-        for (const [inviteId, timestamp] of this.notifiedInvites.entries()) {
-            if (now - timestamp > this.DISMISS_TIMEOUT) {
-                this.notifiedInvites.delete(inviteId);
-            }
-        }
-
-        // Clean up notified invite requests
-        for (const [inviteRequestId, timestamp] of this.notifiedInviteRequests.entries()) {
-            if (now - timestamp > this.DISMISS_TIMEOUT) {
-                this.notifiedInviteRequests.delete(inviteRequestId);
-            }
-        }
-
-        // Clean up dismissed/notified group invites
-        for (const [groupId, timestamp] of this.dismissedGroupInvites.entries()) {
-            if (now - timestamp > this.DISMISS_TIMEOUT) {
-                this.dismissedGroupInvites.delete(groupId);
-            }
-        }
-        for (const [groupId, timestamp] of this.notifiedGroupInvites.entries()) {
-            if (now - timestamp > this.DISMISS_TIMEOUT) {
-                this.notifiedGroupInvites.delete(groupId);
-            }
-        }
-
-        log.debug(`[CleanupDismissedAndNotified] Cleanup completed. Dismissed invites: ${this.dismissedInvites.size}, Dismissed requests: ${this.dismissedInviteRequests.size}, Dismissed group invites: ${this.dismissedGroupInvites.size}, Notified invites: ${this.notifiedInvites.size}, Notified requests: ${this.notifiedInviteRequests.size}, Notified group invites: ${this.notifiedGroupInvites.size}`);
     }
 
     #SetupHandlers() {
@@ -1271,6 +1238,12 @@ class Core {
             }
         }
 
+        // Drop tracking for invites that are no longer pending. Without this
+        // we'd either grow these maps unboundedly or (worse) re-notify the
+        // same invite if its tracking entry was cleared between updates.
+        const currentInviteIds = new Set(invites.map(i => i?.id).filter(Boolean));
+        this.#pruneInviteTrackingMaps(this.notifiedInvites, this.dismissedInvites, currentInviteIds);
+
         // Add invites to recent activity
         try {
             await this.UpdateRecentActivity(ActivityUpdatesType.Invites, invites);
@@ -1322,6 +1295,10 @@ class Core {
                 }
             }
         }
+
+        // Drop tracking for invite requests that are no longer pending.
+        const currentRequestIds = new Set(requestInvites.map(r => r?.id).filter(Boolean));
+        this.#pruneInviteTrackingMaps(this.notifiedInviteRequests, this.dismissedInviteRequests, currentRequestIds);
 
         // Add invite requests to recent activity
         try {
@@ -2129,14 +2106,12 @@ class Core {
             }
         }
 
-        // Group invites can stay pending indefinitely. Refresh the timestamp for any still-pending
-        // invite that's already in `notifiedGroupInvites` so the 10-minute cleanup never expires
-        // tracking for a still-active invite (which would cause it to re-toast on the next fetch).
-        for (const invite of invites) {
-            if (invite?.groupId && this.notifiedGroupInvites.has(invite.groupId)) {
-                this.notifiedGroupInvites.set(invite.groupId, Date.now());
-            }
-        }
+        // Group invites use a stable groupId that never auto-rotates, so the
+        // tracking maps must be aligned to the current pending list — not
+        // expired by time. Drop entries whose invite is gone (accepted,
+        // declined, or revoked) and leave still-pending entries alone.
+        const currentGroupIds = new Set(invites.map(i => i?.groupId).filter(Boolean));
+        this.#pruneInviteTrackingMaps(this.notifiedGroupInvites, this.dismissedGroupInvites, currentGroupIds);
     }
 
     //#endregion Groups

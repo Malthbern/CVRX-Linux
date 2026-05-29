@@ -86,36 +86,18 @@ let currentActiveUser = null;
 let activeInstances = [];
 let currentWorldDetailsId = null; // Track the currently open world details
 
-// Dismissed invites tracking system
-// This prevents dismissed invites from reappearing when API updates come in
-const dismissedInvites = new Map(); // Map<inviteId, timestamp>
-const dismissedInviteRequests = new Map(); // Map<inviteRequestId, timestamp>
-const dismissedGroupInvites = new Map(); // Map<groupId, timestamp>
-const DISMISS_TIMEOUT = 10 * 60 * 1000; // 10 minutes in milliseconds (longer than API timeout)
+// Dismissed-state tracking. Entries live as long as the matching invite is in
+// the canonical pending list; pruneDismissedAgainstPending() is called from
+// each update listener to drop entries whose invite is no longer pending.
+// This mirrors the server-side scheme and avoids the old time-based janitor
+// that could re-show a still-pending group invite after 10 idle minutes.
+const dismissedInvites = new Map();
+const dismissedInviteRequests = new Map();
+const dismissedGroupInvites = new Map();
 
-// Function to clean up old dismissed entries
-function cleanupDismissedEntries() {
-    const now = Date.now();
-
-    // Clean up dismissed invites
-    for (const [inviteId, timestamp] of dismissedInvites.entries()) {
-        if (now - timestamp > DISMISS_TIMEOUT) {
-            dismissedInvites.delete(inviteId);
-        }
-    }
-
-    // Clean up dismissed invite requests
-    for (const [inviteRequestId, timestamp] of dismissedInviteRequests.entries()) {
-        if (now - timestamp > DISMISS_TIMEOUT) {
-            dismissedInviteRequests.delete(inviteRequestId);
-        }
-    }
-
-    // Clean up dismissed group invites
-    for (const [groupId, timestamp] of dismissedGroupInvites.entries()) {
-        if (now - timestamp > DISMISS_TIMEOUT) {
-            dismissedGroupInvites.delete(groupId);
-        }
+function pruneDismissedAgainstPending(dismissedMap, currentIds) {
+    for (const id of dismissedMap.keys()) {
+        if (!currentIds.has(id)) dismissedMap.delete(id);
     }
 }
 
@@ -162,9 +144,6 @@ function markGroupInviteDismissed(groupId) {
         log('Failed to mark group invite as dismissed on server:', error);
     });
 }
-
-// Clean up dismissed entries every 5 minutes
-setInterval(cleanupDismissedEntries, 5 * 60 * 1000);
 
 const PrivacyLevel = Object.freeze({
     Public: 0,
@@ -2440,6 +2419,9 @@ window.API.onInvites(async (_event, invites) => {
     // Re-render only this section's contents; other sections stay put.
     clearInviteSection('invites');
 
+    // Keep the dismissed-map aligned to the current pending set.
+    pruneDismissedAgainstPending(dismissedInvites, new Set(invites.map(i => i?.id).filter(Boolean)));
+
     // Filter out dismissed invites
     const filteredInvites = invites.filter(invite => !isInviteDismissed(invite.id));
     
@@ -2643,6 +2625,8 @@ window.API.onInviteRequests((_event, requestInvites) => {
 
     clearInviteSection('invite-requests');
 
+    pruneDismissedAgainstPending(dismissedInviteRequests, new Set(requestInvites.map(r => r?.id).filter(Boolean)));
+
     // Filter out dismissed invite requests
     const filteredInviteRequests = requestInvites.filter(requestInvite => !isInviteRequestDismissed(requestInvite.id));
     
@@ -2813,6 +2797,8 @@ window.API.onGroupInvitesUpdated((_event, payload) => {
     log(invites);
 
     clearInviteSection('group-invites');
+
+    pruneDismissedAgainstPending(dismissedGroupInvites, new Set(invites.map(i => i?.groupId).filter(Boolean)));
 
     const filteredInvites = invites.filter(invite => invite?.groupId && !isGroupInviteDismissed(invite.groupId));
 
