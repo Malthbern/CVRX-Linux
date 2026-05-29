@@ -1654,6 +1654,9 @@ class Core {
         if (instance?.world?.imageUrl) {
             await LoadImage(instance.world.imageUrl, instance.world);
         }
+        if (instance?.group?.image) {
+            await LoadImage(instance.group.image, instance.group);
+        }
         await LoadUserImages(instance?.author);
         await LoadUserImages(instance?.owner);
         for (const instanceMember of instance?.members ?? []) {
