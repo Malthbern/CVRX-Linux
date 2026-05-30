@@ -86,36 +86,18 @@ let currentActiveUser = null;
 let activeInstances = [];
 let currentWorldDetailsId = null; // Track the currently open world details
 
-// Dismissed invites tracking system
-// This prevents dismissed invites from reappearing when API updates come in
-const dismissedInvites = new Map(); // Map<inviteId, timestamp>
-const dismissedInviteRequests = new Map(); // Map<inviteRequestId, timestamp>
-const dismissedGroupInvites = new Map(); // Map<groupId, timestamp>
-const DISMISS_TIMEOUT = 10 * 60 * 1000; // 10 minutes in milliseconds (longer than API timeout)
+// Dismissed-state tracking. Entries live as long as the matching invite is in
+// the canonical pending list; pruneDismissedAgainstPending() is called from
+// each update listener to drop entries whose invite is no longer pending.
+// This mirrors the server-side scheme and avoids the old time-based janitor
+// that could re-show a still-pending group invite after 10 idle minutes.
+const dismissedInvites = new Map();
+const dismissedInviteRequests = new Map();
+const dismissedGroupInvites = new Map();
 
-// Function to clean up old dismissed entries
-function cleanupDismissedEntries() {
-    const now = Date.now();
-
-    // Clean up dismissed invites
-    for (const [inviteId, timestamp] of dismissedInvites.entries()) {
-        if (now - timestamp > DISMISS_TIMEOUT) {
-            dismissedInvites.delete(inviteId);
-        }
-    }
-
-    // Clean up dismissed invite requests
-    for (const [inviteRequestId, timestamp] of dismissedInviteRequests.entries()) {
-        if (now - timestamp > DISMISS_TIMEOUT) {
-            dismissedInviteRequests.delete(inviteRequestId);
-        }
-    }
-
-    // Clean up dismissed group invites
-    for (const [groupId, timestamp] of dismissedGroupInvites.entries()) {
-        if (now - timestamp > DISMISS_TIMEOUT) {
-            dismissedGroupInvites.delete(groupId);
-        }
+function pruneDismissedAgainstPending(dismissedMap, currentIds) {
+    for (const id of dismissedMap.keys()) {
+        if (!currentIds.has(id)) dismissedMap.delete(id);
     }
 }
 
@@ -162,9 +144,6 @@ function markGroupInviteDismissed(groupId) {
         log('Failed to mark group invite as dismissed on server:', error);
     });
 }
-
-// Clean up dismissed entries every 5 minutes
-setInterval(cleanupDismissedEntries, 5 * 60 * 1000);
 
 const PrivacyLevel = Object.freeze({
     Public: 0,
@@ -2360,15 +2339,88 @@ window.API.onUserStats((_event, userStats) => {
     }
 });
 
+// =========================================================================
+// Invites & Requests panel — section infrastructure.
+//
+// Each notification type lives in its own stable section so a re-render
+// triggered by one type (e.g. accepting a group invite) can no longer
+// reshuffle the other types. The section divs are inserted/removed lazily so
+// the wrapper's :empty "No notifications" placeholder still works when
+// nothing is pending.
+// =========================================================================
+const INVITE_SECTION_ORDER = ['friend-requests', 'invites', 'invite-requests', 'group-invites'];
+const INVITE_SECTION_META = {
+    'friend-requests': { label: 'Friend Requests', icon: 'person_add' },
+    'invites':         { label: 'Instance Invites', icon: 'mail' },
+    'invite-requests': { label: 'Invite Requests',  icon: 'pan_tool' },
+    'group-invites':   { label: 'Group Invites',    icon: 'group' },
+};
+
+function getOrCreateInviteSection(sectionKey) {
+    const wrapper = document.querySelector('.home-requests-wrapper');
+    let section = wrapper.querySelector(`.notification-section[data-section="${sectionKey}"]`);
+    if (section) return section;
+
+    const meta = INVITE_SECTION_META[sectionKey];
+    section = createElement('div', {
+        className: 'notification-section',
+        innerHTML: `
+            <div class="notification-section-header">
+                <span class="material-symbols-outlined notification-section-icon">${meta.icon}</span>
+                <span class="notification-section-label">${meta.label}</span>
+                <span class="notification-section-count"></span>
+            </div>
+            <div class="notification-section-body"></div>
+        `,
+    });
+    section.dataset.section = sectionKey;
+
+    // Insert ahead of the first existing section that comes later in the
+    // canonical order. Falls back to append when this is the latest one.
+    const myIndex = INVITE_SECTION_ORDER.indexOf(sectionKey);
+    let placed = false;
+    for (const sib of wrapper.querySelectorAll('.notification-section')) {
+        const sibIndex = INVITE_SECTION_ORDER.indexOf(sib.dataset.section);
+        if (sibIndex > myIndex) {
+            wrapper.insertBefore(section, sib);
+            placed = true;
+            break;
+        }
+    }
+    if (!placed) wrapper.appendChild(section);
+    return section;
+}
+
+function clearInviteSection(sectionKey) {
+    const section = document.querySelector(`.home-requests-wrapper .notification-section[data-section="${sectionKey}"]`);
+    if (section) section.remove();
+}
+
+// Recompute the section's item count, updating the header badge — or remove
+// the section entirely when it has nothing left so the empty wrapper falls
+// back to its "No notifications" placeholder.
+function finalizeInviteSection(sectionKey) {
+    const section = document.querySelector(`.home-requests-wrapper .notification-section[data-section="${sectionKey}"]`);
+    if (!section) return;
+    const body = section.querySelector('.notification-section-body');
+    const count = body.children.length;
+    if (count === 0) {
+        section.remove();
+        return;
+    }
+    section.querySelector('.notification-section-count').textContent = `(${count})`;
+}
+
 // Janky invite listener
 window.API.onInvites(async (_event, invites) => {
     log('Invites Received!');
     log(invites);
 
-    const homeRequests = document.querySelector('.home-requests-wrapper');
+    // Re-render only this section's contents; other sections stay put.
+    clearInviteSection('invites');
 
-    // Remove previous invites
-    document.querySelectorAll('.notification-invite').forEach(el => el.remove());
+    // Keep the dismissed-map aligned to the current pending set.
+    pruneDismissedAgainstPending(dismissedInvites, new Set(invites.map(i => i?.id).filter(Boolean)));
 
     // Filter out dismissed invites
     const filteredInvites = invites.filter(invite => !isInviteDismissed(invite.id));
@@ -2425,6 +2477,7 @@ window.API.onInvites(async (_event, invites) => {
                             // Mark the invite as dismissed and remove the notification
                             markInviteDismissed(invite.id);
                             inviteNode.remove();
+                            finalizeInviteSection('invites');
                             updateNotificationCount();
                         } else {
                             pushToast('Failed to open ChilloutVR. Make sure it\'s installed.', 'error');
@@ -2456,6 +2509,7 @@ window.API.onInvites(async (_event, invites) => {
                             // Mark the invite as dismissed and remove the notification
                             markInviteDismissed(invite.id);
                             inviteNode.remove();
+                            finalizeInviteSection('invites');
                             updateNotificationCount();
                         } else {
                             pushToast('Failed to open ChilloutVR. Make sure it\'s installed.', 'error');
@@ -2485,6 +2539,7 @@ window.API.onInvites(async (_event, invites) => {
                             // Mark the invite as dismissed and remove the notification
                             markInviteDismissed(invite.id);
                             inviteNode.remove();
+                            finalizeInviteSection('invites');
                             updateNotificationCount();
                         } else {
                             pushToast('Failed to open ChilloutVR. Make sure it\'s installed.', 'error');
@@ -2510,6 +2565,7 @@ window.API.onInvites(async (_event, invites) => {
                 markInviteDismissed(invite.id);
                 // Remove the notification from DOM
                 inviteNode.remove();
+                finalizeInviteSection('invites');
                 // Update notification count
                 updateNotificationCount();
                 pushToast('Invite dismissed', 'info');
@@ -2553,9 +2609,11 @@ window.API.onInvites(async (_event, invites) => {
         const worldInfo = inviteNode.querySelector('.notification-world-info');
         worldInfo.insertBefore(worldImageNode, worldInfo.firstChild);
 
-        homeRequests.prepend(inviteNode);
+        const sectionBody = getOrCreateInviteSection('invites').querySelector('.notification-section-body');
+        sectionBody.appendChild(inviteNode);
     }
-    
+
+    finalizeInviteSection('invites');
     // Update notification count
     updateNotificationCount();
 });
@@ -2565,10 +2623,9 @@ window.API.onInviteRequests((_event, requestInvites) => {
     log('Requests to Invite Received!');
     log(requestInvites);
 
-    const homeRequests = document.querySelector('.home-requests-wrapper');
+    clearInviteSection('invite-requests');
 
-    // Remove previous invite requests
-    document.querySelectorAll('.notification-invite-request').forEach(el => el.remove());
+    pruneDismissedAgainstPending(dismissedInviteRequests, new Set(requestInvites.map(r => r?.id).filter(Boolean)));
 
     // Filter out dismissed invite requests
     const filteredInviteRequests = requestInvites.filter(requestInvite => !isInviteRequestDismissed(requestInvite.id));
@@ -2596,6 +2653,7 @@ window.API.onInviteRequests((_event, requestInvites) => {
                 markInviteRequestDismissed(requestInvite.id);
                 // Remove the notification from DOM
                 requestInviteNode.remove();
+                finalizeInviteSection('invite-requests');
                 // Update notification count
                 updateNotificationCount();
                 pushToast('Invite request dismissed', 'info');
@@ -2636,9 +2694,11 @@ window.API.onInviteRequests((_event, requestInvites) => {
         const notificationContent = requestInviteNode.querySelector('.notification-content');
         notificationContent.insertBefore(userImageNode, notificationContent.firstChild);
 
-        homeRequests.prepend(requestInviteNode);
+        const sectionBody = getOrCreateInviteSection('invite-requests').querySelector('.notification-section-body');
+        sectionBody.appendChild(requestInviteNode);
     }
-    
+
+    finalizeInviteSection('invite-requests');
     // Update notification count
     updateNotificationCount();
 });
@@ -2648,10 +2708,7 @@ window.API.onFriendRequests((_event, friendRequests) => {
     log('On Friend Requests received!');
     log(friendRequests);
 
-    const homeRequests = document.querySelector('.home-requests-wrapper');
-
-    // Remove previous friend requests
-    document.querySelectorAll('.notification-friend-request').forEach(el => el.remove());
+    clearInviteSection('friend-requests');
 
     // Create the friend request notification elements
     for (const friendRequest of friendRequests) {
@@ -2723,11 +2780,12 @@ window.API.onFriendRequests((_event, friendRequests) => {
         const notificationContent = friendRequestNode.querySelector('.notification-content');
         notificationContent.insertBefore(userImageNode, notificationContent.firstChild);
 
-        // Append friend request node at the beginning
-        homeRequests.prepend(friendRequestNode);
+        const sectionBody = getOrCreateInviteSection('friend-requests').querySelector('.notification-section-body');
+        sectionBody.appendChild(friendRequestNode);
         applyTooltips();
     }
 
+    finalizeInviteSection('friend-requests');
     // Update notification count
     updateNotificationCount();
 });
@@ -2738,10 +2796,9 @@ window.API.onGroupInvitesUpdated((_event, payload) => {
     log('Group Invites Received!');
     log(invites);
 
-    const homeRequests = document.querySelector('.home-requests-wrapper');
+    clearInviteSection('group-invites');
 
-    // Remove previous group invite cards before re-rendering
-    document.querySelectorAll('.notification-group-invite').forEach(el => el.remove());
+    pruneDismissedAgainstPending(dismissedGroupInvites, new Set(invites.map(i => i?.groupId).filter(Boolean)));
 
     const filteredInvites = invites.filter(invite => invite?.groupId && !isGroupInviteDismissed(invite.groupId));
 
@@ -2769,6 +2826,7 @@ window.API.onGroupInvitesUpdated((_event, payload) => {
                     pushToast(`Joined ${invite.groupName || 'group'}`, 'confirm');
                     markGroupInviteDismissed(invite.groupId);
                     groupInviteNode.remove();
+                    finalizeInviteSection('group-invites');
                     updateNotificationCount();
                     // Re-fetch so the rest of the app (e.g. My Groups) reflects the change
                     window.API.refreshGroupInvites().catch(error => log('Failed to refresh group invites:', error));
@@ -2791,6 +2849,7 @@ window.API.onGroupInvitesUpdated((_event, payload) => {
                     pushToast('Group invite declined', 'info');
                     markGroupInviteDismissed(invite.groupId);
                     groupInviteNode.remove();
+                    finalizeInviteSection('group-invites');
                     updateNotificationCount();
                     window.API.refreshGroupInvites().catch(error => log('Failed to refresh group invites:', error));
                 } catch (error) {
@@ -2838,9 +2897,11 @@ window.API.onGroupInvitesUpdated((_event, payload) => {
         const notificationContent = groupInviteNode.querySelector('.notification-content');
         notificationContent.insertBefore(groupImageNode, notificationContent.firstChild);
 
-        homeRequests.prepend(groupInviteNode);
+        const sectionBody = getOrCreateInviteSection('group-invites').querySelector('.notification-section-body');
+        sectionBody.appendChild(groupInviteNode);
     }
 
+    finalizeInviteSection('group-invites');
     applyTooltips();
     updateNotificationCount();
 });

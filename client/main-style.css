@@ -540,6 +540,43 @@ button {
     content: "No notifications";
 }
 
+/* Stable per-type buckets inside the Invites & Requests panel. Each section
+   has its own header + body so a re-render of one type leaves the others
+   untouched. Sections are inserted lazily so the empty-wrapper placeholder
+   above still kicks in when nothing is pending. */
+.notification-section {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.notification-section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-style: italic;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.55);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+    padding: 2px 4px;
+}
+
+.notification-section-icon {
+    font-size: 16px !important;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.notification-section-count {
+    margin-left: auto;
+    font-style: normal;
+}
+
+.notification-section-body {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
 /* Notification section collapse functionality */
 .home-requests .home-section-header {
     cursor: pointer;
@@ -693,16 +730,16 @@ button {
     transition: all 0.3s ease;
 }
 
-.home-requests-wrapper :is(div):not(.request-node--button-wrapper, .requests-placeholder, .notification-item, .notification-content, .notification-main, .notification-action, .notification-action-buttons):nth-of-type(odd) {
+.home-requests-wrapper :is(div):not(.request-node--button-wrapper, .requests-placeholder, .notification-item, .notification-content, .notification-main, .notification-action, .notification-action-buttons, .notification-section, .notification-section-header, .notification-section-body):nth-of-type(odd) {
     background: rgba(255, 255, 255, 0.05);
 }
 
-.home-requests-wrapper :is(div):not(.request-node--button-wrapper, .requests-placeholder) {
+.home-requests-wrapper :is(div):not(.request-node--button-wrapper, .requests-placeholder, .notification-section, .notification-section-header, .notification-section-body) {
     transition: all 0.3s ease;
     border: 1px solid transparent;
 }
 
-.home-requests-wrapper :is(div):not(.request-node--button-wrapper, .requests-placeholder):hover {
+.home-requests-wrapper :is(div):not(.request-node--button-wrapper, .requests-placeholder, .notification-section, .notification-section-header, .notification-section-body):hover {
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(0, 140, 255, 0.3);
 }
